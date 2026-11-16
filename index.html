@@ -1,0 +1,1891 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Cuentas por pagar · Venejugos y NMS</title>
+<link rel="icon" href="logo-nms.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <div class="brand-logos" id="brandLogos"></div>
+      <div>
+        <h1 class="brand-name">Cuentas por pagar</h1>
+        <div class="brand-sub" id="brandSub">Proveedores y préstamos</div>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="stDeuda">–</b><span>Deuda con proveedores</span></div>
+      <div class="stat hot"><b id="stVencido">–</b><span>Vencido</span></div>
+      <div class="stat"><b id="stSemana">–</b><span>Vence de hoy a 7 días</span></div>
+      <div class="stat"><b id="stCuotas">–</b><span id="stCuotasK">Cuotas del mes</span></div>
+    </div>
+  </div>
+  <div class="lane" aria-hidden="true"></div>
+</header>
+
+<nav class="tabbar no-print" aria-label="Secciones">
+  <div class="tabbar-inner">
+    <button class="tab on" role="tab" data-tab="resumen" aria-selected="true">Resumen</button>
+    <button class="tab" role="tab" data-tab="facturas" aria-selected="false">Facturas <span class="tab-badge" id="tabBadge" hidden title="Facturas vencidas">0</span></button>
+    <button class="tab" role="tab" data-tab="registrar" aria-selected="false">Registrar <span class="tab-badge pend" id="pendBadge" hidden title="Cambios sin sincronizar">0</span></button>
+    <button class="tab" role="tab" data-tab="financiero" aria-selected="false" id="tabFin">Financiero</button>
+    <button class="sync" id="syncBtn" title="Sincronizar ahora"><i aria-hidden="true"></i><span id="syncTxt">Cargando…</span></button>
+    <div class="emp-pick" id="empPick" hidden>
+      <span id="empLbl">Empresa</span>
+      <div class="seg" id="empSeg" role="group" aria-labelledby="empLbl"></div>
+    </div>
+  </div>
+</nav>
+
+<div class="draft-note no-print" id="draftNote" hidden></div>
+
+<div class="ratebar" id="ratebar">
+  <div class="ratebar-inner">
+    <div class="rate-now">
+      <span class="rate-k" id="rateK">Tasa oficial BCV</span>
+      <b id="rateVal">Sin tasa</b>
+      <span class="rate-sub" id="rateSub"></span>
+    </div>
+    <div class="rate-tools" role="group" aria-label="Actualizar la tasa">
+      <button class="btn btn-ghost" id="tasaFetch">Actualizar desde el BCV</button>
+      <label class="conv-f manual"><span>Tasa manual</span><input id="tasaManual" class="field" inputmode="decimal" placeholder="0,0000" autocomplete="off" aria-label="Tasa manual en bolívares por dólar"></label>
+      <button class="btn btn-primary" id="tasaUsar">Usar tasa manual</button>
+      <button class="link-btn" id="tasaQuitar" hidden>Volver a la tasa BCV</button>
+    </div>
+    <div class="conv" role="group" aria-label="Convertidor de dólares a bolívares">
+      <label class="conv-f"><span>US$</span><input id="cUsd" class="field" inputmode="decimal" placeholder="0,00" autocomplete="off" aria-label="Dólares"></label>
+      <span class="conv-eq" aria-hidden="true">=</span>
+      <label class="conv-f"><span>Bs.</span><input id="cBs" class="field" inputmode="decimal" placeholder="0,00" autocomplete="off" aria-label="Bolívares"></label>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== RESUMEN ===================== -->
+<div class="tabpanel" id="p-resumen">
+<main class="layout">
+  <section class="main" aria-label="Resumen de la deuda">
+    <div class="toolbar no-print">
+      <select id="fProv" class="field" aria-label="Filtrar por proveedor"><option value="">Todos los proveedores</option></select>
+      <div class="seg" id="fEstado" role="group" aria-label="Estado">
+        <button data-v="" class="on">Todo</button><button data-v="v">Vencido</button><button data-v="p">Por vencer</button>
+      </div>
+      <label class="lbl-field">Calcular al día <input type="date" id="fHoy" class="field"></label>
+    </div>
+    <div class="result-count" id="resCount"></div>
+    <div id="resBody" class="main"></div>
+  </section>
+
+  <aside class="side" aria-label="Calendario de pagos y administración">
+    <div class="card card-pad" id="calCard"></div>
+
+    <!-- Panel administrativo (ocultable) -->
+    <div class="admin-shell no-print">
+      <button class="admin-toggle" id="adminToggle" aria-expanded="false" aria-controls="adminBody">
+        <span>Panel administrativo</span>
+        <span class="state"><span id="adminState">Bloqueado</span> <span class="chev">▾</span></span>
+      </button>
+      <div class="admin-body" id="adminBody" hidden>
+
+        <div class="gate" id="gate">
+          <p style="margin:0;font-size:13.5px;color:var(--steel);">Ingresa la contraseña para cargar el Excel, publicar la tasa y subir logos.</p>
+          <input type="password" id="pwd" class="field" placeholder="Contraseña" autocomplete="current-password" aria-label="Contraseña">
+          <button class="btn btn-primary" id="unlockBtn">Entrar</button>
+          <div class="err" id="gateErr"></div>
+        </div>
+
+        <div id="adminTools" hidden>
+          <div class="admin-block">
+            <h3>Cargar cuentas por pagar desde Excel</h3>
+            <p>Carga masiva al registro desde el libro de CXP: la hoja PROVEEDORES y las hojas por mes con las cuotas de préstamos.</p>
+            <label class="file-drop" id="fileDrop">
+              <strong>Seleccionar archivo .xlsx o .xls</strong>
+              <span id="fileName">Ningún archivo seleccionado</span>
+              <input type="file" id="excelFile" accept=".xlsx,.xlsm,.xls">
+            </label>
+            <div id="importArea" hidden>
+              <div class="import-preview" id="importPreview"></div>
+              <div class="opt-row">
+                <label><input type="radio" name="impMode" value="sumar" checked> Actualizar por documento y agregar las nuevas</label>
+                <label><input type="radio" name="impMode" value="reemplazar"> Reemplazar: además retirar las facturas que no vienen en el Excel</label>
+                <label><input type="checkbox" id="conFin" checked> Incluir las cuotas de préstamos (pestaña Financiero)</label>
+              </div>
+              <div class="btn-row">
+                <button class="btn btn-primary" id="applyImport">Cargar al registro</button>
+                <button class="btn btn-ghost" id="cancelImport">Cancelar</button>
+              </div>
+            </div>
+            <div class="source-note" id="sourceNote" style="margin-top:10px;"></div>
+          </div>
+
+          <div class="admin-block" id="tasaBlock">
+            <h3>Tasa para todo el equipo</h3>
+            <p>La tasa de la barra superior se guarda solo en este equipo. Publícala para que todos vean la misma.</p>
+            <div class="tasa-now" id="tasaNow"></div>
+            <div class="btn-row">
+              <button class="btn btn-signal btn-sm" id="ghPushTasa">Publicar la tasa en uso</button>
+              <button class="btn btn-ghost btn-sm" id="tasaManOff" hidden>Quitar la tasa manual publicada</button>
+            </div>
+            <div class="source-note" id="tasaMsg" style="margin-top:10px;"></div>
+          </div>
+
+          <div class="admin-block" id="ghBlock">
+            <h3>Conexión con GitHub</h3>
+            <p>Enlaza el sitio con el repositorio. El registro se guarda en una rama aparte para que varios equipos trabajen a la vez sin republicar el sitio.</p>
+            <div class="gh-grid">
+              <div><label for="ghOwner">Usuario u organización</label><input id="ghOwner" class="field" autocomplete="off"></div>
+              <div><label for="ghRepo">Repositorio</label><input id="ghRepo" class="field" autocomplete="off"></div>
+              <div><label for="ghBranch">Rama del sitio</label><input id="ghBranch" class="field" value="main"></div>
+              <div><label for="ghDataBranch">Rama del registro</label><input id="ghDataBranch" class="field" value="datos"></div>
+              <div><label for="ghCxpPath">JSON de cuentas por pagar</label><input id="ghCxpPath" class="field" value="cxp.json"></div>
+              <div><label for="ghTasaPath">JSON de la tasa BCV</label><input id="ghTasaPath" class="field" value="tasa.json"></div>
+              <div class="full"><label for="ghUser">Tu nombre (queda en cada factura que registres)</label><input id="ghUser" class="field" maxlength="30" autocomplete="off"></div>
+              <div class="full"><label for="ghToken">Token de acceso (permiso Contents: Read and write)</label><input id="ghToken" type="password" class="field" placeholder="github_pat_… o ghp_…" autocomplete="off"></div>
+            </div>
+            <div class="opt-row">
+              <label><input type="checkbox" id="ghRemember"> Recordar el token en este equipo (menos seguro: queda guardado en el navegador)</label>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-primary btn-sm" id="ghSaveBtn">Guardar configuración</button>
+              <button class="btn btn-ghost btn-sm" id="ghTestBtn">Probar conexión</button>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-signal btn-sm" id="ghSyncBtn">Sincronizar ahora</button>
+              <button class="btn btn-ghost btn-sm" id="ghPullBtn">Descartar mis cambios y recargar</button>
+            </div>
+            <div class="source-note" id="ghStatus" style="margin-top:10px;"></div>
+            <div class="source-note" style="margin-top:6px;">Sin «Recordar», el token se guarda solo en esta pestaña y se borra al cerrarla. Cada equipo que registre facturas necesita un token. No lo subas al repositorio.</div>
+          </div>
+
+          <div class="admin-block">
+            <details class="sub" id="logosBox">
+              <summary>Logos de proveedores, bancos y empresas</summary>
+              <p style="margin-top:8px;">El tablero busca cada logo en la carpeta <code>logos/</code> con el nombre indicado; si no existe muestra las iniciales. Sube una imagen y se publica con el nombre correcto.</p>
+              <ul class="logo-list" id="logoList"></ul>
+            </details>
+          </div>
+
+          <div class="admin-block">
+            <h3>Respaldos</h3>
+            <p>Descarga el registro completo, con las facturas pagadas y anuladas.</p>
+            <div class="btn-row">
+              <button class="btn btn-ghost btn-sm" id="exportJson">Descargar cxp.json</button>
+              <button class="btn btn-ghost btn-sm" id="exportTasa">Descargar tasa.json</button>
+              <button class="btn btn-ghost btn-sm" id="exportXlsx">Descargar facturas (.xlsx)</button>
+            </div>
+          </div>
+
+          <div class="admin-block">
+            <button class="link-btn" id="lockBtn">Cerrar sesión del panel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+</main>
+</div>
+
+<!-- ===================== FACTURAS ===================== -->
+<div class="tabpanel" id="p-facturas" hidden>
+<section class="registry">
+  <div class="registry-head stack">
+    <div>
+      <h2 class="section-title">Facturas por pagar</h2>
+      <p id="facSummary"></p>
+    </div>
+    <div class="toolbar no-print">
+      <input type="search" id="facQ" class="field search" placeholder="Buscar documento o proveedor" autocomplete="off" aria-label="Buscar documento o proveedor" style="min-width:240px;">
+      <select id="fProv2" class="field" aria-label="Filtrar por proveedor"><option value="">Todos los proveedores</option></select>
+      <div class="seg" id="fEstado2" role="group" aria-label="Estado">
+        <button data-v="" class="on">Todo</button><button data-v="v">Vencido</button><button data-v="p">Por vencer</button>
+      </div>
+      <button class="btn btn-ghost" id="facXlsx">Descargar .xlsx</button>
+      <button class="btn btn-ghost" id="facPrint">Imprimir</button>
+    </div>
+  </div>
+  <div class="result-count no-print" id="facCount"></div>
+  <div class="card long">
+    <div class="table-wrap tall fac"><table id="facTable"></table></div>
+    <div class="empty" id="facEmpty" hidden></div>
+    <div class="pager no-print" id="facMas" hidden><span>Se muestran las primeras 25.</span><button class="btn btn-ghost btn-sm" id="facMasBtn">Mostrar todas</button></div>
+  </div>
+</section>
+</div>
+
+<!-- ===================== REGISTRAR ===================== -->
+<div class="tabpanel" id="p-registrar" hidden>
+<section class="registry reg-grid">
+
+  <div class="invoice reg-form" id="regForm">
+    <div class="inv-head">
+      <div class="inv-brand">
+        <div class="logos" id="rLogo"></div>
+        <div><div class="n" id="rTitulo">Registrar factura</div><div class="s" id="rSub">Cuenta por pagar a proveedor</div></div>
+      </div>
+      <div class="inv-num"><div class="k">DEUDA EN USD</div><div class="v" id="rDeuda">US$ 0,00</div></div>
+    </div>
+    <div class="form-body">
+      <div class="inv-fields">
+        <div><label for="rEmp">EMPRESA</label><select id="rEmp" class="field"></select></div>
+        <div><label for="rProv">PROVEEDOR</label><input id="rProv" class="field" list="rProvList" autocomplete="off" placeholder="Nombre del proveedor"><datalist id="rProvList"></datalist></div>
+        <div><label for="rDoc">DOCUMENTO</label><input id="rDoc" class="field" autocomplete="off" placeholder="N.º de factura o nota"></div>
+        <div><label for="rFe">F.EMISION</label><input id="rFe" type="date" class="field"></div>
+        <div><label for="rBase">BASE IMPONIBLE</label><input id="rBase" class="field num" inputmode="decimal" autocomplete="off" placeholder="0,00"></div>
+        <div><label for="rExento">EXENTO</label><input id="rExento" class="field num" inputmode="decimal" autocomplete="off" placeholder="0,00"></div>
+        <div><label for="rIva">IVA <button type="button" class="mini" id="rIvaAuto" hidden>volver al 16 %</button></label><input id="rIva" class="field num" inputmode="decimal" autocomplete="off" placeholder="16 % de la base"></div>
+        <div><label for="rRet">RETENCION <button type="button" class="mini" id="rRetAuto" hidden>volver al 75 % del IVA</button></label><input id="rRet" class="field num" inputmode="decimal" autocomplete="off" placeholder="75 % del IVA"></div>
+        <div><label for="rCred">Días de crédito</label><input id="rCred" class="field num" type="number" min="0" max="365" step="1" inputmode="numeric"></div>
+        <div><label for="rFv">F.VCTO.</label><input id="rFv" type="date" class="field"></div>
+        <div class="full"><label for="rTasa">TASA BCV FACT <span class="hint" id="rTasaNota"></span></label><input id="rTasa" class="field num" inputmode="decimal" autocomplete="off" placeholder="0,0000"></div>
+      </div>
+      <div class="perf" aria-hidden="true"></div>
+      <div class="inv-totals plain" aria-live="polite">
+        <div class="row"><span>TOTAL FACTURA</span><b id="rTotal">Bs. 0,00</b></div>
+        <div class="row"><span>$</span><b id="rUsd">US$ 0,00</b></div>
+        <div class="row"><span>POR PAGAR MENOS RETENCION</span><b id="rPorPagar">Bs. 0,00</b></div>
+        <div class="grand"><span>DEUDA EN USD</span><b id="rDeuda2">US$ 0,00</b></div>
+        <div class="row"><span>Días de vencimiento</span><b id="rDias">—</b></div>
+        <div class="row"><span>STATUS</span><b id="rStatus">—</b></div>
+      </div>
+      <div class="form-err" id="rErr" role="alert"></div>
+    </div>
+    <div class="inv-actions">
+      <button class="btn btn-signal wide" id="rGuardar">Guardar factura</button>
+      <button class="btn btn-ghost" id="rLimpiar">Limpiar</button>
+      <button class="btn btn-ghost" id="rCancelar" hidden>Cancelar edición</button>
+    </div>
+  </div>
+
+  <div class="reg-side">
+    <div class="card card-pad" id="conectar" hidden>
+      <h2 class="card-title">Conecta este equipo</h2>
+      <p class="card-sub">Sin token, lo que registres se queda en este equipo y nadie más lo ve.</p>
+      <div class="gh-grid" style="margin-top:12px;">
+        <div><label for="cUser">Tu nombre</label><input id="cUser" class="field" maxlength="30" autocomplete="off"></div>
+        <div><label for="cToken">Token de acceso</label><input id="cToken" type="password" class="field" placeholder="github_pat_…" autocomplete="off"></div>
+        <div class="full" id="cRepoRow"><label for="cRepo">Repositorio (usuario/repositorio)</label><input id="cRepo" class="field" autocomplete="off" placeholder="usuario/repositorio"></div>
+      </div>
+      <div class="opt-row"><label><input type="checkbox" id="cRemember"> Recordar el token en este equipo</label></div>
+      <div class="btn-row"><button class="btn btn-primary" id="cConectar">Conectar</button></div>
+      <div class="source-note" id="cMsg" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="card long">
+      <div class="card-pad" style="padding-bottom:12px;">
+        <div class="registry-head">
+          <div><h2 class="card-title">Registro</h2><p class="card-sub" id="regSummary"></p></div>
+          <div class="toolbar">
+            <input type="search" id="regQ" class="field search" placeholder="Buscar en el registro" autocomplete="off" aria-label="Buscar en el registro">
+            <div class="seg" id="regVista" role="group" aria-label="Vista del registro">
+              <button data-v="rec" class="on">Recientes</button><button data-v="pag">Pagadas</button><button data-v="anu">Anuladas</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="table-wrap tall"><table id="regTable" class="tight"></table></div>
+      <div class="empty" id="regEmpty" hidden></div>
+    </div>
+  </div>
+</section>
+</div>
+
+<!-- ===================== FINANCIERO ===================== -->
+<div class="tabpanel" id="p-financiero" hidden>
+<section class="registry">
+  <div class="registry-head">
+    <div>
+      <h2 class="section-title">Cuotas de préstamos</h2>
+      <p id="finSummary"></p>
+    </div>
+    <div class="toolbar no-print">
+      <select id="finMes" class="field" aria-label="Mes"></select>
+      <button class="btn btn-ghost" id="finXlsx">Descargar .xlsx</button>
+      <button class="btn btn-ghost" id="finPrint">Imprimir</button>
+    </div>
+  </div>
+  <div id="finBody" class="main"></div>
+</section>
+</div>
+
+<dialog class="confirm" id="dlg">
+  <div class="dlg-head"><h2 id="dlgTitle">¿Está seguro?</h2></div>
+  <div class="dlg-body" id="dlgBody"></div>
+  <div class="dlg-actions">
+    <button class="btn btn-ghost" id="dlgCancel">Cancelar</button>
+    <button class="btn btn-primary" id="dlgOk">Confirmar</button>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* =====================================================================
+   NÚCLEO CXP · compartido por cxp.html y admin.html
+   Lectura del Excel, cálculo de vencimientos, formato y tipo de cambio.
+   ===================================================================== */
+const CXP = (() => {
+  "use strict";
+  const MESES = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO","JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"];
+  const MES_CORTO = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+  const EMPRESA = "VENEJUGOS";
+
+  /* ---------- texto ---------- */
+  const norm = s => String(s == null ? "" : s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/\s+/g, " ").trim();
+  const slug = s => norm(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const titulo = s => norm(s).toLowerCase().replace(/(^|[\s\-\/])([a-zñ])/g, (m, a, b) => a + b.toUpperCase());
+  const iniciales = s => {
+    const p = norm(s).replace(/[^A-Z0-9 ]/g, " ").split(" ").filter(w => w && !["DE", "DEL", "LA", "EL", "LOS", "LAS", "Y", "CA"].includes(w));
+    if (!p.length) return "?";
+    return (p.length === 1 ? p[0].slice(0, 2) : p[0][0] + p[1][0]);
+  };
+
+  /* ---------- números ---------- */
+  const aNum = v => {
+    if (typeof v === "number") return isFinite(v) ? v : null;
+    if (typeof v !== "string") return null;
+    const s = v.trim().replace(/\s/g, "");
+    if (!s) return null;
+    if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(s) || /^-?\d+,\d+$/.test(s)) return +s.replace(/\./g, "").replace(",", ".");
+    if (/^-?\d+(\.\d+)?$/.test(s)) return +s;
+    return null;
+  };
+  const r4 = n => n == null ? null : Math.round(n * 1e4) / 1e4;
+  /* 1.234.567,89 sin depender de la configuración regional del equipo */
+  const fmt = (n, dec = 2) => {
+    if (n == null || !isFinite(n)) return "—";
+    const neg = n < 0, f = Math.abs(n).toFixed(dec), [e, d] = f.split(".");
+    const m = e.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    return (neg && +f !== 0 ? "−" : "") + m + (d ? "," + d : "");
+  };
+  const fmtTasa = n => n == null ? "—" : fmt(n, Math.abs(n * 100 - Math.round(n * 100)) > 1e-6 ? 4 : 2);
+  const fmtPct = (n, dec = 1) => n == null || !isFinite(n) ? "—" : fmt(n * 100, dec) + " %";
+  const fmtCorto = n => {
+    if (n == null || !isFinite(n)) return "—";
+    const a = Math.abs(n);
+    if (a >= 1e9) return fmt(n / 1e9, 2) + " MM";
+    if (a >= 1e6) return fmt(n / 1e6, 2) + " M";
+    if (a >= 1e3) return fmt(n / 1e3, 1) + " mil";
+    return fmt(n, 0);
+  };
+
+  /* ---------- fechas (ISO aaaa-mm-dd, sin zonas horarias) ---------- */
+  const p2 = n => String(n).padStart(2, "0");
+  const iso = (y, m, d) => `${y}-${p2(m)}-${p2(d)}`;
+  const hoyISO = () => { const d = new Date(); return iso(d.getFullYear(), d.getMonth() + 1, d.getDate()); };
+  const utc = s => { const [y, m, d] = s.split("-").map(Number); return Date.UTC(y, m - 1, d); };
+  const dias = (desde, hasta) => Math.round((utc(hasta) - utc(desde)) / 864e5);
+  const sumar = (s, n) => { const d = new Date(utc(s) + n * 864e5); return iso(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()); };
+  const fFecha = s => { if (!s) return "—"; const [y, m, d] = s.split("-"); return `${d}/${m}/${y}`; };
+  const fFechaCorta = s => { if (!s) return "—"; const [, m, d] = s.split("-"); return `${+d} ${MES_CORTO[+m - 1]}`; };
+  const diaSemana = s => new Date(utc(s)).getUTCDay();           /* 0 = domingo */
+  const lunesDe = s => sumar(s, -((diaSemana(s) + 6) % 7));
+  const esISO = s => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(utc(s));
+  /* serial de Excel, texto dd/mm/aaaa o Date -> ISO */
+  const aFecha = (v, XLSX) => {
+    if (v == null || v === "") return null;
+    if (typeof v === "number") {
+      if (v < 20000 || v > 80000) return null;
+      if (XLSX && XLSX.SSF && XLSX.SSF.parse_date_code) { const c = XLSX.SSF.parse_date_code(v); return c ? iso(c.y, c.m, c.d) : null; }
+      const d = new Date(Math.round((v - 25569) * 864e5)); return iso(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+    }
+    if (v instanceof Date) return isNaN(v) ? null : iso(v.getFullYear(), v.getMonth() + 1, v.getDate());
+    const s = String(v).trim();
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); if (m) return iso(+m[1], +m[2], +m[3]);
+    m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/); if (m) return iso(+m[3] < 100 ? 2000 + +m[3] : +m[3], +m[2], +m[1]);
+    return null;
+  };
+
+  /* =====================================================================
+     LECTURA DEL EXCEL
+     ===================================================================== */
+  const CLAVES = {
+    PROVEEDOR: "p", DOCUMENTO: "doc", FEMISION: "fe", FECHAEMISION: "fe", FECHADEEMISION: "fe",
+    BASEIMPONIBLE: "base", EXENTO: "exento", IVA: "iva", TOTALFACTURA: "total", "$": "usd",
+    RETENCION: "ret", FVCTO: "fv", FVENCIMIENTO: "fv", FECHAVENCIMIENTO: "fv", FECHADEVENCIMIENTO: "fv", VENCIMIENTO: "fv",
+    PORPAGARMENOSRETENCION: "porPagar", TASABCVFACT: "tasa", TASABCV: "tasa", TASA: "tasa", DEUDAENUSD: "deudaUsd", EMPRESA: "emp"
+  };
+  const clave = h => norm(h).replace(/[^A-Z0-9$]/g, "");
+
+  /* identidad de una factura: empresa + proveedor + documento (no se puede registrar dos veces) */
+  const claveFactura = f => `${slug(f.emp || EMPRESA)}|${slug(f.p)}|${norm(f.doc).replace(/\s+/g, "")}`;
+  /* mismos cálculos de la hoja de Excel a partir de lo que se escribe */
+  function calcular(c) {
+    const base = +c.base || 0, exento = +c.exento || 0, tasa = +c.tasa || 0;
+    const iva = c.iva == null || c.iva === "" ? base * 0.16 : +c.iva;
+    const ret = c.ret == null || c.ret === "" ? iva * 0.75 : +c.ret;
+    const total = base + exento + iva, porPagar = total - ret;
+    return { base: r4(base), exento: r4(exento), iva: r4(iva), total: r4(total), usd: r4(tasa ? total / tasa : 0), ret: r4(ret), porPagar: r4(porPagar), tasa: tasa ? r4(tasa) : null, deudaUsd: r4(tasa ? porPagar / tasa : 0) };
+  }
+
+  function leerProveedores(XLSX, wb, avisos) {
+    let hoja = null, filas = null, cab = -1;
+    const orden = wb.SheetNames.slice().sort((a, b) => (norm(b) === "PROVEEDORES") - (norm(a) === "PROVEEDORES"));
+    for (const n of orden) {
+      const f = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: null, blankrows: true });
+      const i = f.slice(0, 20).findIndex(r => { const k = (r || []).map(clave); return k.includes("PROVEEDOR") && k.includes("DOCUMENTO"); });
+      if (i > -1) { hoja = n; filas = f; cab = i; break; }
+    }
+    if (!hoja) { avisos.push({ nivel: "error", texto: "No se encontró una hoja con las columnas PROVEEDOR y DOCUMENTO." }); return { hoja: null, lista: [] }; }
+    const col = {};
+    filas[cab].forEach((h, i) => { const c = CLAVES[clave(h)]; if (c && !(c in col)) col[c] = i; });
+    ["p", "doc", "fe", "fv", "tasa"].forEach(c => { if (!(c in col)) avisos.push({ nivel: "error", texto: `Falta la columna ${{ p: "PROVEEDOR", doc: "DOCUMENTO", fe: "F.EMISION", fv: "F.VCTO.", tasa: "TASA BCV FACT" }[c]} en la hoja ${hoja}.` }); });
+    const lista = [];
+    for (let i = cab + 1; i < filas.length; i++) {
+      const r = filas[i] || [], g = c => (c in col ? r[col[c]] : null);
+      const p = String(g("p") == null ? "" : g("p")).replace(/\s+/g, " ").trim();
+      const doc = String(g("doc") == null ? "" : g("doc")).trim();
+      const fe = aFecha(g("fe"), XLSX);
+      if (!p || !doc || !fe) continue;                      /* fila de totales o vacía */
+      const fila = i + 1;
+      const base = aNum(g("base")) || 0, exento = aNum(g("exento")) || 0, tasa = aNum(g("tasa"));
+      let iva = aNum(g("iva")); if (iva == null) iva = base * 0.16;
+      let total = aNum(g("total")); if (total == null) total = base + exento + iva;
+      let ret = aNum(g("ret")); if (ret == null) ret = iva * 0.75;
+      let porPagar = aNum(g("porPagar")); if (porPagar == null) porPagar = total - ret;
+      let usd = aNum(g("usd")); if (usd == null && tasa) usd = total / tasa;
+      let deudaUsd = aNum(g("deudaUsd")); if (deudaUsd == null && tasa) deudaUsd = porPagar / tasa;
+      let fv = aFecha(g("fv"), XLSX);
+      if (!fv) { fv = fe; avisos.push({ nivel: "aviso", texto: `${p} ${doc} (fila ${fila}): sin fecha de vencimiento; se usó la de emisión.` }); }
+      if (!tasa) avisos.push({ nivel: "aviso", texto: `${p} ${doc} (fila ${fila}): sin tasa BCV; la deuda en USD queda en cero.` });
+      const emp = norm(g("emp"));
+      lista.push({ p, doc, fe, base: r4(base), exento: r4(exento), iva: r4(iva), total: r4(total), usd: r4(usd || 0), ret: r4(ret), fv, porPagar: r4(porPagar), tasa: tasa ? r4(tasa) : null, deudaUsd: r4(deudaUsd || 0) });
+      if (emp && emp !== EMPRESA) lista[lista.length - 1].emp = emp;
+    }
+    return { hoja, lista };
+  }
+
+  function leerFinanciero(XLSX, wb, archivo, avisos) {
+    const lista = [];
+    const anioArchivo = (String(archivo || "").match(/20\d{2}/) || [])[0];
+    wb.SheetNames.forEach(n => {
+      const mi = MESES.indexOf(norm(n));
+      if (mi < 0) return;
+      const filas = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: null, blankrows: true });
+      let empresa = EMPRESA, anio = null, col = null, bloque = [];
+      const cerrar = () => {
+        if (!bloque.length) return;
+        const a = anio || anioArchivo || (bloque.map(b => b.fecha).filter(Boolean).sort().pop() || "").slice(0, 4) || String(new Date().getFullYear());
+        bloque.forEach(b => { b.mes = `${a}-${p2(mi + 1)}`; lista.push(b); });
+        bloque = [];
+      };
+      filas.forEach((r, i) => {
+        r = r || [];
+        const txt = r.map(c => typeof c === "string" ? norm(c) : "");
+        const t = txt.find(c => c.indexOf("RESUMEN CXP FINANCIERO") === 0);
+        if (t) {
+          cerrar(); col = null;
+          const resto = t.replace("RESUMEN CXP FINANCIERO", "").trim();
+          const y = resto.match(/20\d{2}\b/);
+          if (MESES.some(m => resto.indexOf(m) === 0)) { empresa = EMPRESA; anio = y ? y[0] : anio; }
+          else empresa = resto || EMPRESA;
+          return;
+        }
+        if (txt.includes("CUOTA") && txt.includes("BANCO")) {
+          col = { cuota: txt.indexOf("CUOTA"), fecha: txt.indexOf("FECHA"), usd: txt.indexOf("CUOTA $"), cap: txt.indexOf("CAPITAL"), int: txt.indexOf("INTERESES"), banco: txt.indexOf("BANCO"),
+                  est: txt.findIndex(c => ["ESTATUS", "STATUS", "ESTADO", "PAGADO", "PAGADA"].includes(c)) };
+          return;
+        }
+        if (!col) return;
+        if (txt[col.cuota] === "TOTAL") { cerrar(); col = null; return; }
+        const banco = norm(r[col.banco]);
+        if (!banco) return;
+        const cap = col.cap > -1 ? aNum(r[col.cap]) : null, int = col.int > -1 ? aNum(r[col.int]) : null;
+        let usd = col.usd > -1 ? aNum(r[col.usd]) : null;
+        if (usd == null) usd = (cap || 0) + (int || 0);
+        if (!usd && !cap && !int) return;
+        const cuota = r[col.cuota] == null ? "" : String(r[col.cuota]).trim();
+        const est = col.est > -1 ? norm(r[col.est]) : "";
+        const fila = { empresa, cuota, fecha: col.fecha > -1 ? aFecha(r[col.fecha], XLSX) : null, usd: r4(usd), cap: r4(cap || 0), int: r4(int || 0), banco };
+        if (est) fila.pagada = /^(SI|S|X|PAGAD[OA]|CANCELAD[OA])/.test(est);
+        if (cap != null && int != null && Math.abs(usd - cap - int) > 0.05)
+          avisos.push({ nivel: "aviso", texto: `${n}, ${banco} ${cuota || ""} (fila ${i + 1}): la cuota (${fmt(usd)}) no coincide con capital + intereses (${fmt(cap + int)}).` });
+        bloque.push(fila);
+      });
+      cerrar();
+    });
+    return lista;
+  }
+
+  function leerLibro(XLSX, wb, archivo, opciones) {
+    const avisos = [], o = opciones || {};
+    const P = leerProveedores(XLSX, wb, avisos);
+    const fin = o.sinFinanciero ? [] : leerFinanciero(XLSX, wb, archivo, avisos);
+    /* controles sobre las facturas */
+    const porDoc = {}, tasaDia = {};
+    P.lista.forEach(f => {
+      const k = slug(f.p) + "|" + f.doc; porDoc[k] = (porDoc[k] || 0) + 1;
+      if (f.tasa) (tasaDia[f.fe] = tasaDia[f.fe] || new Set()).add(f.tasa);
+      if (dias(f.fe, f.fv) < 0) avisos.push({ nivel: "aviso", texto: `${f.p} ${f.doc}: vence (${fFecha(f.fv)}) antes de su emisión (${fFecha(f.fe)}).` });
+    });
+    Object.keys(porDoc).filter(k => porDoc[k] > 1).forEach(k => avisos.push({ nivel: "aviso", texto: `Documento repetido ${porDoc[k]} veces: ${k.split("|")[1]} (${k.split("|")[0]}).` }));
+    Object.keys(tasaDia).sort().forEach(d => { const v = [...tasaDia[d]]; if (Math.max(...v) / Math.min(...v) - 1 > 0.0005) avisos.push({ nivel: "aviso", texto: `Facturas del ${fFecha(d)} con tasas BCV distintas: ${[...tasaDia[d]].sort().map(fmtTasa).join(" y ")}.` }); });
+    const ahora = new Date().toISOString(), vistos = {};
+    P.lista.forEach(f => { let u = claveFactura(f); vistos[u] = (vistos[u] || 0) + 1; if (vistos[u] > 1) u += "#" + vistos[u]; f.uid = u; f.mod = ahora; f.org = "excel"; });
+    return { version: 2, archivo: archivo || "", hoja: P.hoja, cargado: ahora, proveedores: P.lista, financiero: fin, finMod: ahora, avisos };
+  }
+
+  /* =====================================================================
+     CÁLCULO
+     ===================================================================== */
+  /* días = hoy − F.VCTO. (positivo: vencido), igual que la hoja de Excel */
+  const TRAMOS = [
+    { id: "v61", grupo: "v", rot: "Más de 60 días", min: 61, max: Infinity },
+    { id: "v31", grupo: "v", rot: "31 a 60 días", min: 31, max: 60 },
+    { id: "v8", grupo: "v", rot: "8 a 30 días", min: 8, max: 30 },
+    { id: "v1", grupo: "v", rot: "1 a 7 días", min: 1, max: 7 },
+    { id: "p0", grupo: "p", rot: "Hoy a 7 días", min: -7, max: 0 },
+    { id: "p8", grupo: "p", rot: "8 a 15 días", min: -15, max: -8 },
+    { id: "p16", grupo: "p", rot: "Más de 15 días", min: -Infinity, max: -16 }
+  ];
+  const tramoDe = d => TRAMOS.find(t => d >= t.min && d <= t.max);
+
+  function factura(f, hoy, tasaHoy) {
+    const d = dias(f.fv, hoy), vencido = d > 0, t = tramoDe(d);
+    const bsHoy = tasaHoy ? f.deudaUsd * tasaHoy : null;
+    return Object.assign({}, f, { dias: d, vencido, status: vencido ? "VENCIDO" : "POR VENCER", tramo: t.id, bsHoy, dif: bsHoy == null ? null : bsHoy - f.porPagar, clave: slug(f.p), emp: f.emp || EMPRESA });
+  }
+
+  function resumen(fs) {
+    const R = { n: fs.length, usd: 0, vencido: 0, porVencer: 0, nV: 0, nP: 0, bs: 0, bsHoy: 0, total: 0, totalUsd: 0, ret: 0, prox7: 0, nProx7: 0, maxDias: null, tramos: {}, proveedores: [] };
+    TRAMOS.forEach(t => R.tramos[t.id] = { usd: 0, n: 0 });
+    const P = {};
+    fs.forEach(f => {
+      R.usd += f.deudaUsd; R.bs += f.porPagar; R.bsHoy += f.bsHoy || 0; R.total += f.total; R.totalUsd += f.usd; R.ret += f.ret;
+      if (f.vencido) { R.vencido += f.deudaUsd; R.nV++; } else { R.porVencer += f.deudaUsd; R.nP++; }
+      if (f.dias <= 0 && f.dias >= -7) { R.prox7 += f.deudaUsd; R.nProx7++; }
+      if (R.maxDias == null || f.dias > R.maxDias) R.maxDias = f.dias;
+      R.tramos[f.tramo].usd += f.deudaUsd; R.tramos[f.tramo].n++;
+      const p = P[f.clave] || (P[f.clave] = { clave: f.clave, nombre: f.p, n: 0, usd: 0, vencido: 0, porVencer: 0, bs: 0, bsHoy: 0, maxDias: null, prox: null });
+      p.n++; p.usd += f.deudaUsd; p.bs += f.porPagar; p.bsHoy += f.bsHoy || 0;
+      if (f.vencido) p.vencido += f.deudaUsd; else { p.porVencer += f.deudaUsd; if (!p.prox || f.fv < p.prox) p.prox = f.fv; }
+      if (p.maxDias == null || f.dias > p.maxDias) p.maxDias = f.dias;
+    });
+    R.dif = R.bsHoy - R.bs;
+    R.proveedores = Object.values(P).sort((a, b) => b.usd - a.usd);
+    return R;
+  }
+
+  /* =====================================================================
+     REGISTRO COMPARTIDO (varios usuarios a la vez)
+     Cada factura tiene uid y fecha de modificación (mod). Nada se borra:
+     pagar, anular o retirar una factura cambia su estado (est).
+     ===================================================================== */
+  const VIEJO = "2000-01-01T00:00:00.000Z";
+  function normalizar(d) {
+    d = d && typeof d === "object" ? d : {};
+    const vistos = {}, base = d.cargado || VIEJO;
+    const proveedores = (Array.isArray(d.proveedores) ? d.proveedores : []).filter(f => f && f.p && f.doc).map(f => {
+      const r = Object.assign({}, f);
+      let u = r.uid || claveFactura(r); vistos[u] = (vistos[u] || 0) + 1; if (vistos[u] > 1) u += "#" + vistos[u];
+      r.uid = u; if (!r.mod) r.mod = base;
+      return r;
+    });
+    return { version: 2, archivo: d.archivo || "", hoja: d.hoja || "", cargado: d.cargado || "", proveedores, financiero: Array.isArray(d.financiero) ? d.financiero : [], finMod: d.finMod || d.cargado || VIEJO };
+  }
+  /* Une lo publicado (remoto) con lo de este equipo. De este equipo solo cuentan los cambios
+     pendientes de subir; en cada factura gana la modificación más reciente. */
+  function mezclar(remoto, local, pend, finPend) {
+    const L = normalizar(local);
+    if (!remoto) return L;
+    const R = normalizar(remoto), mL = new Map(L.proveedores.map(f => [f.uid, f])), vistos = new Set(), out = [];
+    pend = pend || new Set();
+    R.proveedores.forEach(r => { const l = mL.get(r.uid); vistos.add(r.uid); out.push(l && pend.has(r.uid) && (l.mod || "") > (r.mod || "") ? l : r); });
+    L.proveedores.forEach(l => { if (!vistos.has(l.uid) && pend.has(l.uid)) out.push(l); });
+    const F = finPend && (L.finMod || "") >= (R.finMod || "") ? L : R;
+    return { version: 2, archivo: F.archivo, hoja: F.hoja, cargado: F.cargado, proveedores: out, financiero: F.financiero, finMod: F.finMod };
+  }
+  const CAMPOS = ["p", "doc", "fe", "fv", "base", "exento", "iva", "total", "usd", "ret", "porPagar", "tasa", "deudaUsd"];
+  const igual = (a, b) => CAMPOS.every(k => typeof a[k] === "number" || typeof b[k] === "number" ? Math.abs((+a[k] || 0) - (+b[k] || 0)) < 0.005 : String(a[k] || "") === String(b[k] || ""));
+  /* Lleva un Excel al registro. modo "sumar": actualiza por documento y agrega las nuevas.
+     modo "reemplazar": además retira las que ya no vienen en el Excel. */
+  function importar(actual, excel, modo, quien, conFin) {
+    const A = normalizar(actual), E = normalizar(excel), ahora = new Date().toISOString();
+    const mA = new Map(A.proveedores.map(f => [f.uid, f])), enExcel = new Set(), cambiadas = [];
+    const res = { nuevas: 0, actualizadas: 0, iguales: 0, omitidas: 0, retiradas: 0 };
+    const sello = f => Object.assign(f, { mod: ahora, por: quien || "", org: "excel" });
+    E.proveedores.forEach(e => {
+      enExcel.add(e.uid);
+      const a = mA.get(e.uid);
+      if (!a) { A.proveedores.push(sello(Object.assign({}, e))); cambiadas.push(e.uid); res.nuevas++; return; }
+      if (a.est === "pagada" || a.est === "anulada") { res.omitidas++; return; }
+      if (!a.est && igual(a, e)) { res.iguales++; return; }
+      CAMPOS.forEach(k => a[k] = e[k]); delete a.est; delete a.pago; sello(a); cambiadas.push(a.uid); res.actualizadas++;
+    });
+    if (modo === "reemplazar") A.proveedores.forEach(a => { if (!a.est && !enExcel.has(a.uid)) { a.est = "retirada"; a.mod = ahora; a.por = quien || ""; cambiadas.push(a.uid); res.retiradas++; } });
+    let fin = false;
+    if (conFin) { A.financiero = E.financiero; A.finMod = ahora; fin = true; }
+    A.archivo = E.archivo; A.hoja = E.hoja; A.cargado = E.cargado || ahora;
+    return { datos: A, cambiadas, fin, res };
+  }
+
+  /* última tasa registrada en las facturas: respaldo cuando no hay tasa publicada */
+  function tasaDeFacturas(lista) {
+    const dia = {};
+    (lista || []).forEach(f => { if (f.tasa && f.est !== "anulada") (dia[f.fe] = dia[f.fe] || []).push(f.tasa); });
+    const serie = Object.keys(dia).sort().map(d => { const v = dia[d].slice().sort((a, b) => a - b); return { fecha: d, tasa: v[Math.floor((v.length - 1) / 2)] }; });
+    return { serie, ultima: serie.length ? serie[serie.length - 1] : null };
+  }
+
+  /* =====================================================================
+     TIPO DE CAMBIO BCV (consulta desde el navegador)
+     ===================================================================== */
+  const FUENTES = [
+    { id: "dolarapi", nombre: "BCV · DolarApi", url: "https://ve.dolarapi.com/v1/dolares/oficial" },
+    { id: "pydolarve", nombre: "BCV · PyDolarVE", url: "https://pydolarve.org/api/v1/dollar?page=bcv&monitor=usd" },
+    { id: "rafnixg", nombre: "BCV · bcv-api", url: "https://bcv-api.rafnixg.dev/rates/" }
+  ];
+  function extraerTasa(j) {
+    if (!j || typeof j !== "object") return null;
+    const m = j.monitors || {};
+    const cand = [j.promedio, j.venta, j.price, j.dollar, j.usd, j.rate, j.tasa, (m.usd || {}).price, (m.bcv || {}).price];
+    let tasa = null;
+    for (const c of cand) { const n = typeof c === "string" ? aNum(c) : c; if (typeof n === "number" && isFinite(n) && n > 0) { tasa = n; break; } }
+    if (!tasa) return null;
+    /* las marcas de tiempo vienen en UTC: se llevan a la hora de Caracas (UTC−4) */
+    const cruda = j.fechaActualizacion || j.date || j.last_update || j.fecha || (m.usd || {}).last_update || "";
+    let fecha = null;
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:/.test(cruda) && !isNaN(new Date(cruda))) { const d = new Date(new Date(cruda).getTime() - 4 * 36e5); fecha = iso(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()); }
+    else fecha = aFecha(cruda) || null;
+    return { tasa: r4(tasa), fecha };
+  }
+  async function consultarBCV(log) {
+    for (const f of FUENTES) {
+      const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
+      const reloj = ctl ? setTimeout(() => ctl.abort(), 9000) : 0;
+      try {
+        const r = await fetch(f.url, { cache: "no-store", signal: ctl ? ctl.signal : undefined });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const t = extraerTasa(await r.json());
+        if (!t) throw new Error("respuesta sin tasa");
+        return { tasa: t.tasa, fecha: t.fecha || hoyISO(), fuente: f.nombre, consultado: new Date().toISOString() };
+      } catch (e) { if (log) log(`${f.nombre}: ${e.name === "AbortError" ? "sin respuesta" : e.message}`); }
+      finally { if (reloj) clearTimeout(reloj); }
+    }
+    throw new Error("No respondió ninguna fuente de la tasa BCV.");
+  }
+
+  /* tasa que aplica: manual de este navegador > manual publicada > BCV vigente hoy > última de las facturas.
+     El BCV publica por la tarde la tasa del siguiente día hábil: mientras esa fecha no llegue,
+     se usa la última con fecha valor de hoy o anterior y la nueva se informa como próxima. */
+  /* tasa.json: { valor, fecha, actualizada, fuente, manual: { valor, fecha, nota, activo }, historial: [{ fecha, valor }] } */
+  const bcvPublicada = pub => pub && pub.valor > 0 ? { tasa: +pub.valor, fecha: pub.fecha, fuente: pub.fuente || "BCV", actualizado: pub.actualizada || "" } : null;
+  const manualPublicada = pub => { const m = pub && pub.manual; return m && m.activo && m.valor > 0 ? { tasa: +m.valor, fecha: m.fecha, nota: m.nota || "" } : null; };
+  function tasaVigente(e) {
+    const loc = e.manualLocal, pub = e.publicada || {}, man = manualPublicada(pub), fac = e.facturas, hoy = e.hoy || hoyISO();
+    const reciente = (a, c) => (c.fecha || "").localeCompare(a.fecha || "") || (c.consultado || c.actualizado || "").localeCompare(a.consultado || a.actualizado || "");
+    const cand = [bcvPublicada(pub), e.bcvLocal].filter(x => x && x.tasa > 0).map(x => Object.assign({}, x)).sort(reciente);
+    const vistas = new Set(cand.map(x => x.fecha));
+    (pub.historial || []).forEach(h => { if (h && h.valor > 0 && h.fecha && !vistas.has(h.fecha)) cand.push({ tasa: +h.valor, fecha: h.fecha, fuente: "BCV · historial" }); });
+    cand.sort(reciente);
+    const vig = cand.find(x => (x.fecha || "") <= hoy) || cand[cand.length - 1] || null;
+    const prox = vig && cand[0] !== vig && cand[0].fecha > hoy ? cand[0] : null;
+    const bcv = vig ? { tasa: vig.tasa, fecha: vig.fecha, fuente: vig.fuente || "BCV", consultado: vig.consultado || vig.actualizado || "" } : null;
+    const extra = { bcv, proxima: prox ? { tasa: prox.tasa, fecha: prox.fecha } : null };
+    if (loc && loc.tasa > 0) return Object.assign({ tasa: loc.tasa, fecha: loc.fecha, modo: "manual", origen: "Tasa manual de este equipo" }, extra);
+    if (man) return Object.assign({ tasa: man.tasa, fecha: man.fecha, modo: "manual", origen: "Tasa manual publicada" + (man.nota ? " · " + man.nota : "") }, extra);
+    if (bcv) return Object.assign({ tasa: bcv.tasa, fecha: bcv.fecha, modo: "bcv", origen: bcv.fuente }, extra);
+    if (fac) return Object.assign({ tasa: fac.tasa, fecha: fac.fecha, modo: "facturas", origen: "Última tasa de las facturas" }, extra);
+    return Object.assign({ tasa: null, fecha: null, modo: "sin", origen: "Sin tasa" }, extra);
+  }
+
+  /* ---------- almacenamiento del navegador ---------- */
+  const leer = k => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } };
+  const escribir = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } };
+
+  /* repositorio deducido de la dirección de GitHub Pages: usuario.github.io/repositorio/ */
+  const repoDePagina = () => {
+    try {
+      const h = location.hostname, p = location.pathname.split("/").filter(Boolean);
+      if (/\.github\.io$/i.test(h) && p.length) return h.split(".")[0] + "/" + p[0];
+    } catch (e) {}
+    return "";
+  };
+  /* lee un JSON publicado: GitHub Pages -> repositorio (raw) */
+  async function leerPublicado(nombre) {
+    const v = "?v=" + Date.now();
+    try { const r = await fetch(nombre + v, { cache: "no-store" }); if (r.ok) return { datos: await r.json(), origen: "GitHub Pages" }; } catch (e) {}
+    const repo = repoDePagina();
+    if (repo) for (const rama of ["main", "master"]) {
+      try { const r = await fetch(`https://raw.githubusercontent.com/${repo}/${rama}/${nombre}${v}`, { cache: "no-store" }); if (r.ok) return { datos: await r.json(), origen: "repositorio" }; } catch (e) {}
+    }
+    return null;
+  }
+
+  return { MESES, MES_CORTO, EMPRESA, TRAMOS, FUENTES, norm, slug, esc, titulo, iniciales, aNum, fmt, fmtTasa, fmtPct, fmtCorto,
+    iso, hoyISO, dias, sumar, fFecha, fFechaCorta, lunesDe, esISO, aFecha, leerLibro, factura, resumen, tramoDe, tasaDeFacturas,
+    extraerTasa, consultarBCV, tasaVigente, bcvPublicada, manualPublicada, claveFactura, calcular, normalizar, mezclar, importar, leer, escribir, repoDePagina, leerPublicado };
+})();
+if (typeof module !== "undefined") module.exports = CXP;
+
+</script>
+<script>
+/* =========================================================
+   Cuentas por pagar · Venejugos y NMS
+   Contraseña por defecto del panel: NMS2026
+   Para cambiarla, reemplaza PASSWORD_HASH por el SHA-256 de la nueva (ver README).
+   ========================================================= */
+const PASSWORD_HASH = '3fc6b9b6f17b6492fbd70fa8895bcf8a5e7c112b150dda0210276534285c0c5c';
+const DATA_URL = 'cxp.json';
+const TASA_URL = 'tasa.json';
+const POLL_MS = 30000;          /* cada cuánto se busca lo que registraron otros equipos */
+const K = {
+  datos:'cxp_datos_v2', pend:'cxp_pend_v2', finPend:'cxp_finpend_v2', user:'cxp_usuario', gh:'cxp_github_v1', ghToken:'cxp_github_token', ghTokenLocal:'cxp_gh_token_local', ghSync:'cxp_github_sync_v1',
+  admin:'cxp_admin_ok', adminOpen:'cxp_admin_open', tab:'cxp_tab', emp:'cxp_empresa', bcv:'cxp_bcv_v1', manual:'cxp_tasa_manual_v1'
+};
+
+/* Empresas con logo propio junto a la página. Las demás usan logos/<nombre>.png o sus iniciales. */
+const MARCAS = [
+  {es: s => s === 'venejugos', nombre:'Venejugos C.A.', corto:'Venejugos', oscuro:'logo-venejugos.png', claro:'logo-venejugos.png', ficha:true},
+  {es: s => /(^|-)nms(-|$)/.test(s), corto:'NMS', oscuro:'logo-nms-blanco.png', claro:'logo-nms.png', ficha:false}
+];
+
+/* ---------- Utilidades ---------- */
+const $ = id => document.getElementById(id);
+const {esc, slug, fmt, fmtTasa, fmtPct, fmtCorto, fFecha, dias, sumar} = CXP;
+const usd = n => 'US$ ' + fmt(n);
+const bs = n => 'Bs. ' + fmt(n);
+const fmtDay = s => { if(!s) return '—'; const [y, m, d] = s.split('-'); return `${+d} ${CXP.MES_CORTO[+m - 1]} ${y}`; };
+const fmtDayShort = s => { const [, m, d] = s.split('-'); return `${+d} ${CXP.MES_CORTO[+m - 1]}`; };
+const fmtDate = d => new Date(d).toLocaleString('es-VE', {day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'});
+const HUES = [214,168,32,352,268,192,96,322,44,238,14,142];
+const hue = t => { let s = 0; for(const c of String(t)) s = (s * 31 + c.charCodeAt(0)) >>> 0; return HUES[s % HUES.length]; };
+const QS = new URLSearchParams(location.search);
+const EMB = id => { const e = $(id); try{ return e ? JSON.parse(e.textContent) : null; }catch(x){ return null; } };
+const LOGOS_EMB = EMB('logosEmb') || {};
+const archivo = f => LOGOS_EMB[f] || f;
+
+const store = {
+  get(k, fb){ try{ const v = localStorage.getItem(k); return v == null ? fb : JSON.parse(v); }catch(e){ return fb; } },
+  set(k, v){
+    try{ localStorage.setItem(k, JSON.stringify(v)); return true; }
+    catch(e){ toast('No se pudo guardar en este navegador: ' + e.message, true); return false; }
+  },
+  del(k){ try{ localStorage.removeItem(k); }catch(e){} }
+};
+const ses = { get: k => { try{ return sessionStorage.getItem(k); }catch(e){ return null; } }, set: (k, v) => { try{ sessionStorage.setItem(k, v); }catch(e){} }, del: k => { try{ sessionStorage.removeItem(k); }catch(e){} } };
+
+let toastTimer;
+function toast(msg, isErr){
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.toggle('err', !!isErr);
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), isErr ? 5200 : 3200);
+}
+
+/* Diálogo de confirmación que devuelve una promesa */
+function confirmDialog({title = '¿Está seguro?', html = '', okText = 'Confirmar', danger = false} = {}){
+  return new Promise(resolve => {
+    const dlg = $('dlg');
+    $('dlgTitle').textContent = title;
+    $('dlgBody').innerHTML = html;
+    const ok = $('dlgOk'), cancel = $('dlgCancel');
+    ok.textContent = okText;
+    ok.className = 'btn ' + (danger ? 'btn-danger' : 'btn-primary');
+    const done = val => { dlg.close(); ok.onclick = cancel.onclick = null; dlg.oncancel = null; resolve(val); };
+    ok.onclick = () => done(true);
+    cancel.onclick = () => done(false);
+    dlg.oncancel = e => { e.preventDefault(); done(false); };
+    dlg.showModal();
+    cancel.focus();
+  });
+}
+function descargar(nombre, blob){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = nombre;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+/* ---------- Estado ---------- */
+let datos = CXP.normalizar(null);
+let origen = 'sin datos';
+let pend = new Set(store.get(K.pend, []));      /* uid de facturas cambiadas aquí y aún sin subir */
+let finPend = !!store.get(K.finPend, false);
+let etag = null;                                /* versión del registro que ya tiene este equipo */
+let editando = null;                            /* uid de la factura que se está corrigiendo */
+let regVista = 'rec';
+let pubTasa = {};
+let bcvLocal = store.get(K.bcv, null);
+let manualLocal = store.get(K.manual, null);
+let hoy = CXP.esISO(QS.get('hoy')) ? QS.get('hoy') : CXP.hoyISO();
+let emp = ses.get(K.emp) || '';
+let filtro = {prov:'', estado:'', q:'', tramo:''};
+let orden = {col:'', dir:1};
+let finMes = '';
+let currentTab = 'resumen';
+let adminUnlocked = ses.get(K.admin) === '1';
+let pendiente = null;          /* {wb, nombre} del Excel elegido y aún sin cargar */
+let vista = {};                /* último cálculo, para exportar */
+let verTodas = false;
+
+/* ---------- Empresas y marcas ---------- */
+function marca(e){
+  const s = slug(e), m = MARCAS.find(x => x.es(s));
+  return {emp:e, slug:s, nombre:(m && m.nombre) || e, corto:(m && m.corto) || CXP.titulo(e.split(/[\s,]+/).slice(0, 2).join(' ')),
+    oscuro: m ? m.oscuro : `logos/${s}.png`, claro: m ? m.claro : `logos/${s}.png`, ficha: m ? m.ficha : true};
+}
+function empresas(){
+  const set = new Set();
+  activas().forEach(f => set.add(f.emp || CXP.EMPRESA));
+  (datos.financiero || []).forEach(c => set.add(c.empresa || CXP.EMPRESA));
+  return [...set].sort((a, b) => (b === CXP.EMPRESA) - (a === CXP.EMPRESA) || a.localeCompare(b));
+}
+const logoImg = (m, fondo) => `<img src="${esc(archivo(m[fondo]))}" alt="${esc(m.nombre)}" class="${m.ficha ? 'ficha' : ''}" data-sigla="${esc(CXP.iniciales(m.emp))}" onerror="this.outerHTML='<span class=&quot;sigla mono&quot;>'+this.dataset.sigla+'</span>'">`;
+
+/* ---------- Logos de proveedores y bancos: logos/<nombre>.png ---------- */
+const LOGOS = {};
+const mono = nombre => `<span class="mono" style="--h:${hue(nombre)}" data-logo="${esc(slug(nombre))}" aria-hidden="true">${esc(CXP.iniciales(nombre))}</span>`;
+const who = nombre => `<span class="who">${mono(nombre)}<b>${esc(nombre)}</b></span>`;
+function ponerLogo(el, url){ el.classList.add('img'); el.innerHTML = `<img src="${url}" alt="">`; }
+function pintarLogos(){
+  document.querySelectorAll('[data-logo]').forEach(el => {
+    const s = el.dataset.logo; if(!s || el.classList.contains('img')) return;
+    const L = LOGOS[s];
+    if(L && L.url) return ponerLogo(el, L.url);
+    if(L) return;
+    LOGOS[s] = {url:''};
+    const listo = url => { LOGOS[s] = {url}; document.querySelectorAll(`[data-logo="${s}"]`).forEach(x => { if(!x.classList.contains('img')) ponerLogo(x, url); }); };
+    const f = `logos/${s}.png`;
+    if(LOGOS_EMB[f]) return listo(LOGOS_EMB[f]);
+    const im = new Image();
+    im.onload = () => listo(im.src);
+    im.src = f;
+  });
+}
+
+/* ---------- Carga de datos ----------
+   El registro vive en la rama de datos del repositorio. Con token se lee por la API (al instante);
+   sin token, del repositorio público; y si esa rama aún no existe, del cxp.json que acompaña al sitio. */
+const rutaTasa = () => (store.get(K.gh, {}).tasaPath || TASA_URL);
+const usuario = () => String(store.get(K.user, '') || '').trim();
+const activas = () => datos.proveedores.filter(f => !f.est);
+const porUid = u => datos.proveedores.find(f => f.uid === u);
+function persistir(){ store.set(K.datos, datos); store.set(K.pend, [...pend]); store.set(K.finPend, finPend); }
+async function semilla(){
+  const c = ghConfig(), v = '?v=' + Date.now();
+  try{ const r = await fetch((c.cxpPath || DATA_URL) + v, {cache:'no-store'}); if(r.ok){ const j = await r.json(); if(j && Array.isArray(j.proveedores)) return j; } }catch(e){}
+  return EMB('cxpEmb');
+}
+async function leerRemoto(){
+  const c = ghConfig();
+  if(c.owner && c.repo && ghToken()){
+    const r = await ghGet(c, c.cxpPath, c.dataBranch, etag);
+    if(r.igual) return {igual:true};
+    if(r.json && Array.isArray(r.json.proveedores)){ etag = r.etag; return {json:r.json, via:'registro compartido'}; }
+  } else if(c.owner && c.repo){
+    try{
+      const r = await fetch(`https://raw.githubusercontent.com/${c.owner}/${c.repo}/${encodeURIComponent(c.dataBranch)}/${c.cxpPath}?v=${Date.now()}`, {cache:'no-store'});
+      if(r.ok){ const j = await r.json(); if(j && Array.isArray(j.proveedores)) return {json:j, via:'registro compartido, solo lectura'}; }
+    }catch(e){}
+  }
+  const j = await semilla();
+  return j ? {json:j, via: $('cxpEmb') ? 'datos incorporados en la vista previa' : 'archivo del sitio'} : null;
+}
+async function cargar(){
+  const local = store.get(K.datos, null);
+  let r = null;
+  try{ r = await leerRemoto(); ultimaSync = Date.now(); }catch(e){ ultimoError = e.message || 'Sin conexión con GitHub.'; }
+  if(!(r && r.igual)){
+    datos = CXP.mezclar(r ? r.json : null, local, pend, finPend);
+    origen = r ? r.via : (local ? 'copia guardada en este equipo' : 'sin datos');
+  }
+  persistir();
+  const t = await CXP.leerPublicado(rutaTasa());
+  pubTasa = (t && t.datos) || EMB('tasaEmb') || pubTasa || {};
+}
+
+/* ---------- Tasa ---------- */
+const facTasa = () => CXP.tasaDeFacturas(activas());
+const tasa = () => CXP.tasaVigente({manualLocal, publicada:pubTasa, bcvLocal, facturas:facTasa().ultima});
+const parseNum = s => {
+  s = String(s ?? '').trim().replace(/[^\d.,-]/g, '');
+  if(!s) return NaN;
+  if(s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  return parseFloat(s);
+};
+let lastConv = 'usd';
+function convFromUsd(){ const t = tasa(); if(!t.tasa){ $('cBs').value = ''; return; } const u = parseNum($('cUsd').value); $('cBs').value = isNaN(u) ? '' : fmt(u * t.tasa); }
+function convFromBs(){ const t = tasa(); if(!t.tasa){ $('cUsd').value = ''; return; } const b = parseNum($('cBs').value); $('cUsd').value = isNaN(b) ? '' : fmt(b / t.tasa); }
+$('cUsd').addEventListener('input', () => { lastConv = 'usd'; convFromUsd(); });
+$('cBs').addEventListener('input', () => { lastConv = 'bs'; convFromBs(); });
+
+function renderTasa(t){
+  const viejo = t.modo === 'bcv' && t.fecha && dias(t.fecha, CXP.hoyISO()) > 3;
+  const stale = viejo || t.modo === 'facturas' || t.modo === 'sin';
+  $('rateK').textContent = t.modo === 'manual' ? 'Tasa manual en uso' : t.modo === 'facturas' ? 'Sin tasa BCV todavía' : 'Tasa oficial BCV';
+  $('rateVal').textContent = t.tasa ? `Bs. ${fmtTasa(t.tasa)} por US$1` : 'Sin tasa';
+  $('rateSub').textContent = !t.tasa ? 'Actualiza desde el BCV o escribe una tasa manual'
+    : `${fmtDay(t.fecha)} · ${t.origen}${viejo ? ' · desactualizada' : ''}${t.modo === 'facturas' ? ' · pulsa «Actualizar desde el BCV»' : ''}${t.proxima ? ` · desde el ${fmtDay(t.proxima.fecha)}: Bs. ${fmtTasa(t.proxima.tasa)}` : ''}`;
+  $('ratebar').classList.toggle('stale', stale);
+  $('tasaQuitar').hidden = !manualLocal;
+  $('cUsd').disabled = $('cBs').disabled = !t.tasa;
+  lastConv === 'bs' ? convFromBs() : convFromUsd();
+  /* panel administrativo */
+  const b = CXP.bcvPublicada(pubTasa), m = CXP.manualPublicada(pubTasa);
+  $('tasaNow').innerHTML = (b || m)
+    ? `${b ? `Publicada: <b>Bs. ${fmtTasa(b.tasa)}</b> por US$1<br><small>${fmtDay(b.fecha)} · ${esc(b.fuente)}</small>` : 'Sin tasa BCV publicada.'}${m ? `<br>Manual publicada: <b>Bs. ${fmtTasa(m.tasa)}</b><br><small>${fmtDay(m.fecha)} · manda sobre la del BCV hasta que se quite</small>` : ''}`
+    : 'Todavía no hay una tasa publicada en <code>tasa.json</code>.';
+  $('tasaManOff').hidden = !m;
+}
+
+$('tasaFetch').addEventListener('click', () => actualizarBCV(false));
+async function actualizarBCV(silencio){
+  const btn = $('tasaFetch');
+  if(!silencio){ btn.disabled = true; btn.textContent = 'Consultando…'; }
+  const errs = [];
+  try{
+    const r = await CXP.consultarBCV(e => errs.push(e));
+    if(!(r.tasa > 0 && r.tasa < 100000)) throw new Error('formato inesperado');
+    bcvLocal = r; store.set(K.bcv, r);
+    if(!silencio) toast(`Tasa BCV: Bs. ${fmtTasa(r.tasa)} (${r.fuente})` + (manualLocal ? '. La tasa manual sigue en uso.' : ''));
+  }catch(e){
+    if(!silencio) toast('No se pudo consultar la tasa desde el navegador. Escríbela a mano desde bcv.org.ve.', true);
+  }
+  btn.disabled = false; btn.textContent = 'Actualizar desde el BCV';
+  render();
+}
+async function usarManual(){
+  const v = parseNum($('tasaManual').value);
+  if(!(v > 0) || v >= 100000){ toast('Escribe una tasa válida, por ejemplo 905,50.', true); return; }
+  const t = tasa(), ref = (t.bcv || facTasa().ultima || {}).tasa;
+  if(ref && Math.abs(v / ref - 1) > 0.3){
+    const ok = await confirmDialog({title:'¿Está seguro?', html:`<b>Bs. ${fmtTasa(v)}</b> se aleja mucho de la última tasa conocida (Bs. ${fmtTasa(ref)}). Toda la deuda en bolívares se calculará con ella.`, okText:'Usar esta tasa'});
+    if(!ok) return;
+  }
+  manualLocal = {tasa: Math.round(v * 10000) / 10000, fecha: CXP.hoyISO()};
+  store.set(K.manual, manualLocal);
+  $('tasaManual').value = '';
+  toast(`Tasa manual en uso: Bs. ${fmtTasa(manualLocal.tasa)}`);
+  render();
+}
+$('tasaUsar').addEventListener('click', usarManual);
+$('tasaManual').addEventListener('keydown', e => { if(e.key === 'Enter') usarManual(); });
+$('tasaQuitar').addEventListener('click', () => { manualLocal = null; store.del(K.manual); toast('Se volvió a la tasa BCV'); render(); });
+
+/* =========================================================
+   Cálculo de la vista
+   ========================================================= */
+function pasa(f, conTramo){
+  if(emp && f.emp !== emp) return false;
+  if(filtro.prov && f.clave !== filtro.prov) return false;
+  if(filtro.estado === 'v' && !f.vencido) return false;
+  if(filtro.estado === 'p' && f.vencido) return false;
+  if(conTramo && filtro.tramo && f.tramo !== filtro.tramo) return false;
+  if(filtro.q){ const q = CXP.norm(filtro.q); if(CXP.norm(f.doc).indexOf(q) < 0 && CXP.norm(f.p).indexOf(q) < 0) return false; }
+  return true;
+}
+
+function render(){
+  const t = tasa();
+  const todas = activas().map(f => CXP.factura(f, hoy, t.tasa));
+  const deEmp = todas.filter(f => !emp || f.emp === emp);
+  const base = todas.filter(f => pasa(f, false)), sel = todas.filter(f => pasa(f, true));
+  const cuotas = (datos.financiero || []).filter(c => !emp || (c.empresa || CXP.EMPRESA) === emp);
+  vista = {t, todas, deEmp, base, sel, cuotas, R: CXP.resumen(base), RE: CXP.resumen(deEmp)};
+  renderTasa(t); renderMarca(); renderFiltros(); renderResumen(); renderCalendario(); renderFacturas(); renderFinanciero(); renderRegistro(); renderAdmin(); renderSync();
+  pintarLogos();
+}
+
+function renderMarca(){
+  const es = empresas(), ver = emp ? [emp] : es;
+  const ms = (ver.length ? ver : [CXP.EMPRESA]).map(marca);
+  $('brandLogos').innerHTML = ms.slice(0, 3).map(m => logoImg(m, 'oscuro')).join('');
+  $('brandSub').textContent = ms.map(m => m.nombre).join(' y ') + ' · proveedores y préstamos';
+  document.title = 'Cuentas por pagar · ' + ms.map(m => m.corto).join(' y ');
+  /* selector de empresa */
+  $('empPick').hidden = es.length < 2;
+  $('empSeg').innerHTML = `<button data-emp="" class="${emp ? '' : 'on'}" aria-pressed="${!emp}">Todas</button>` +
+    es.map(e => `<button data-emp="${esc(e)}" class="${emp === e ? 'on' : ''}" aria-pressed="${emp === e}">${esc(marca(e).corto)}</button>`).join('');
+  /* indicadores del encabezado: de la empresa elegida, sin los demás filtros */
+  const R = vista.RE, n = v => `<small>US$</small>${fmt(v, 0)}`;
+  $('stDeuda').innerHTML = n(R.usd); $('stVencido').innerHTML = n(R.vencido); $('stSemana').innerHTML = n(R.prox7);
+  const mes = hoy.slice(0, 7), cm = vista.cuotas.filter(c => c.mes === mes);
+  $('stCuotas').innerHTML = cm.length ? n(cm.reduce((s, c) => s + c.usd, 0)) : '–';
+  $('stCuotasK').textContent = 'Cuotas de ' + CXP.MESES[+mes.slice(5) - 1].toLowerCase();
+  const b = $('tabBadge'); b.hidden = !R.nV; b.textContent = R.nV;
+  $('tabFin').hidden = !(datos.financiero || []).length;
+  const np = pend.size + (finPend ? 1 : 0), d = $('draftNote'); d.hidden = !np || conectado();
+  d.textContent = `Tienes ${np} ${np === 1 ? 'cambio guardado' : 'cambios guardados'} solo en este equipo. Conéctalo en la pestaña Registrar para que el resto del equipo los vea.`;
+  const pb = $('pendBadge'); pb.hidden = !np; pb.textContent = np;
+}
+
+function renderFiltros(){
+  const provs = {}; vista.deEmp.forEach(f => provs[f.clave] = f.p);
+  if(filtro.prov && !provs[filtro.prov]) filtro.prov = '';
+  const ops = '<option value="">Todos los proveedores</option>' + Object.keys(provs).sort((a, b) => provs[a].localeCompare(provs[b], 'es')).map(k => `<option value="${esc(k)}">${esc(provs[k])}</option>`).join('');
+  ['fProv', 'fProv2'].forEach(id => { $(id).innerHTML = ops; $(id).value = filtro.prov; });
+  ['fEstado', 'fEstado2'].forEach(id => $(id).querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === filtro.estado)));
+  $('fHoy').value = hoy;
+  if($('facQ').value !== filtro.q) $('facQ').value = filtro.q;
+  const chips = [];
+  if(filtro.tramo){ const tr = CXP.TRAMOS.find(x => x.id === filtro.tramo); chips.push(['tramo', (tr.grupo === 'v' ? 'Vencido · ' : 'Por vencer · ') + tr.rot.toLowerCase()]); }
+  if(hoy !== CXP.hoyISO()) chips.push(['hoy', 'Calculado al ' + fmtDay(hoy)]);
+  const ch = chips.map(c => `<button class="chipf" data-quitar="${c[0]}" aria-label="Quitar: ${esc(c[1])}">${esc(c[1])} <b aria-hidden="true">×</b></button>`).join('');
+  $('resCount').innerHTML = `<span>${vista.base.length} de ${vista.deEmp.length} facturas · ${vista.R.proveedores.length} ${vista.R.proveedores.length === 1 ? 'proveedor' : 'proveedores'}</span>` + ch;
+  $('facCount').innerHTML = `<span>${vista.sel.length} de ${vista.deEmp.length} facturas</span>` + ch;
+}
+
+/* ---------- Resumen ---------- */
+function renderResumen(){
+  const {t, base:fs, R} = vista, el = $('resBody');
+  if(!activas().length){ el.innerHTML = `<div class="card"><div class="empty"><b>Todavía no hay cuentas por pagar</b>Registra la primera factura en la pestaña Registrar o carga el Excel de CXP desde el panel administrativo.</div></div>`; return; }
+  if(!fs.length){
+    el.innerHTML = `<div class="card"><div class="empty"><b>${vista.deEmp.length ? 'Ninguna factura coincide con los filtros' : 'El Excel no trae facturas de proveedores de esta empresa'}</b>${vista.deEmp.length ? 'Quita algún filtro para ver la posición.' : 'Sus cuotas de préstamos están en la pestaña Financiero. Para separar proveedores por empresa, agrega una columna EMPRESA a la hoja PROVEEDORES.'}</div></div>`; return;
+  }
+  const pv = R.usd ? R.vencido / R.usd : 0, pp = R.usd ? R.porVencer / R.usd : 0;
+  const peor = fs.slice().sort((a, b) => b.dias - a.dias)[0];
+  const ms = [...new Set(fs.map(f => f.emp))].sort((a, b) => (b === CXP.EMPRESA) - (a === CXP.EMPRESA)).map(marca);
+  const prov = filtro.prov ? fs[0].p : '';
+  const cab = prov
+    ? `<div class="logos">${mono(prov)}</div><div><div class="n">${esc(prov)}</div><div class="s">Estado de la deuda · ${esc(ms.map(m => m.corto).join(' y '))}</div></div>`
+    : `<div class="logos">${ms.slice(0, 2).map(m => logoImg(m, 'oscuro')).join('')}</div><div><div class="n">Estado de la deuda</div><div class="s">${esc(ms.map(m => m.nombre).join(' y '))}</div></div>`;
+  const posicion = `<div class="invoice">
+    <div class="inv-head"><div class="inv-brand">${cab}</div><div class="inv-num"><div class="k">Calculado al</div><div class="v">${fmtDay(hoy)}</div></div></div>
+    <div class="inv-body">
+      <div>
+        <div class="pos-k">${prov ? 'Deuda con ' + esc(prov) : 'Deuda con proveedores'}</div>
+        <div class="pos-total"><small>US$</small>${fmt(R.usd)}</div>
+        <div class="pos-bs">${t.tasa ? `<b>${bs(R.bsHoy)}</b> a la tasa en uso` : 'Sin tasa para convertir a bolívares'}</div>
+        <div class="comp" role="img" aria-label="Vencido ${fmtPct(pv)}, por vencer ${fmtPct(pp)}"><span class="v" style="width:${pv * 100}%"></span><span class="p" style="width:${pp * 100}%"></span></div>
+        <div class="legend"><span><i class="v"></i>Vencido <b>${fmtPct(pv)}</b></span><span><i class="p"></i>Por vencer <b>${fmtPct(pp)}</b></span></div>
+      </div>
+      <div class="inv-totals">
+        <div class="row"><span>Vencido<small>${R.nV} facturas</small></span><b class="${R.vencido ? 'neg' : ''}">${usd(R.vencido)}</b></div>
+        <div class="row"><span>Por vencer<small>${R.nP} facturas</small></span><b>${usd(R.porVencer)}</b></div>
+        <div class="row"><span>Vence de hoy a 7 días<small>${R.nProx7} facturas</small></span><b>${usd(R.prox7)}</b></div>
+        <div class="row"><span>Mayor atraso<small>${peor.dias > 0 ? esc(peor.p) + ' · ' + esc(peor.doc) : 'sin facturas vencidas'}</small></span><b>${peor.dias > 0 ? peor.dias + ' días' : '—'}</b></div>
+        <div class="row"><span>Por pagar según las facturas<small>menos retención</small></span><b>${bs(R.bs)}</b></div>
+        <div class="row"><span>Diferencial cambiario<small>a la tasa en uso</small></span><b class="${R.dif > 0 ? 'neg' : ''}">${t.tasa ? `Bs. ${R.dif > 0 ? '+' : ''}${fmt(R.dif)}${R.bs ? ` (${R.dif > 0 ? '+' : ''}${fmtPct(R.dif / R.bs)})` : ''}` : '—'}</b></div>
+      </div>
+    </div></div>`;
+
+  const mx = Math.max(...CXP.TRAMOS.map(x => R.tramos[x.id].usd), 1);
+  const color = {v61:'--v1', v31:'--v2', v8:'--v3', v1:'--v4', p0:'--p1', p8:'--p2', p16:'--p3'};
+  const col = x => { const d = R.tramos[x.id]; return `<button class="age-col${filtro.tramo === x.id ? ' on' : ''}" data-tramo="${x.id}" title="Ver las facturas de este tramo">
+      <span class="age-amt">${d.usd ? fmtCorto(d.usd).replace(/ (mil|M|MM)$/, '<i> $1</i>') : '—'}</span>
+      <span class="age-bar"><span style="height:${d.usd ? Math.max(d.usd / mx * 100, 1.5) : 0}%;background:var(${color[x.id]})"></span></span>
+      <span class="age-lbl">${x.rot}</span><span class="age-n">${d.n} ${d.n === 1 ? 'factura' : 'facturas'}</span></button>`; };
+  const antiguedad = `<div class="card card-pad">
+    <h2 class="card-title">Antigüedad de la deuda</h2>
+    <p class="card-sub">En US$, según los días respecto al vencimiento. Pulsa un tramo para ver sus facturas.</p>
+    <div class="age-head"><div class="gv">Vencido<b>${usd(R.vencido)}</b></div><div class="gp">Por vencer<b>${usd(R.porVencer)}</b></div></div>
+    <div class="age">${CXP.TRAMOS.filter(x => x.grupo === 'v').map(col).join('')}<span class="age-now" aria-hidden="true"></span>${CXP.TRAMOS.filter(x => x.grupo === 'p').map(col).join('')}</div>
+  </div>`;
+
+  const mxP = Math.max(...R.proveedores.map(p => p.usd), 1);
+  const filas = R.proveedores.map(p => `<tr class="pick" data-prov="${esc(p.clave)}" tabindex="0" title="Ver solo ${esc(p.nombre)}">
+    <td>${who(p.nombre)}</td>
+    <td class="r">${p.n}</td>
+    <td class="r ${p.vencido ? 'neg' : 'muted'}">${p.vencido ? fmt(p.vencido) : '—'}</td>
+    <td class="r">${p.porVencer ? fmt(p.porVencer) : '<span class="muted">—</span>'}</td>
+    <td class="r"><span class="price">${fmt(p.usd)}</span></td>
+    <td><div class="share"><span>${fmtPct(R.usd ? p.usd / R.usd : 0)}</span><div><div class="bar" style="width:${Math.max(p.usd / mxP * 100, 2)}%"><span class="v" style="width:${p.usd ? p.vencido / p.usd * 100 : 0}%"></span><span class="p" style="width:${p.usd ? p.porVencer / p.usd * 100 : 0}%"></span></div></div></div></td>
+    <td class="r">${p.maxDias > 0 ? `<span class="neg">${p.maxDias} días</span>` : '<span class="muted">al día</span>'}</td>
+    <td class="r">${p.prox ? fFecha(p.prox) : '<span class="muted">—</span>'}</td>
+    <td class="r">${t.tasa ? fmt(p.bsHoy) : '—'}</td></tr>`).join('');
+  const proveedores = `<div class="card long">
+    <div class="card-pad" style="padding-bottom:12px;"><h2 class="card-title">Deuda por proveedor</h2><p class="card-sub">De mayor a menor. Pulsa un proveedor para ver solo sus cuentas.</p></div>
+    <div class="table-wrap"><table class="tight">
+      <thead><tr><th>Proveedor</th><th class="r">Fact.</th><th class="r">Vencido US$</th><th class="r">Por vencer US$</th><th class="r">Total US$</th><th style="min-width:130px;">Parte de la deuda</th><th class="r">Mayor atraso</th><th class="r">Próximo pago</th><th class="r">En Bs. a la tasa</th></tr></thead>
+      <tbody>${filas}</tbody>
+      <tfoot><tr><td>Total</td><td class="r">${R.n}</td><td class="r">${fmt(R.vencido)}</td><td class="r">${fmt(R.porVencer)}</td><td class="r">${fmt(R.usd)}</td><td>100 %</td><td class="r">${R.maxDias > 0 ? R.maxDias + ' días' : '—'}</td><td></td><td class="r">${t.tasa ? fmt(R.bsHoy) : '—'}</td></tr></tfoot>
+    </table></div></div>`;
+  el.innerHTML = posicion + antiguedad + proveedores;
+}
+
+function renderCalendario(){
+  const {t, base:fs, R} = vista, el = $('calCard');
+  const lun = CXP.lunesDe(hoy), sem = [];
+  for(let i = 0; i < 5; i++){ const a = i ? sumar(lun, 7 * i) : hoy, b = sumar(lun, 7 * i + 6); sem.push({a, b, usd:0, n:0, rot: i === 0 ? 'Esta semana' : i === 1 ? 'Próxima semana' : `Semana del ${fmtDayShort(a)}`}); }
+  const venc = {usd:R.vencido, n:R.nV}, desp = {usd:0, n:0};
+  fs.forEach(f => { if(f.vencido) return; const s = sem.find(x => f.fv >= x.a && f.fv <= x.b) || desp; s.usd += f.deudaUsd; s.n++; });
+  const mx = Math.max(venc.usd, desp.usd, ...sem.map(s => s.usd), 1);
+  const li = (rot, sub, d, cls) => `<li class="${cls || ''}"><span class="when">${rot}<small>${sub}</small></span><span class="amt">${usd(d.usd)}<small>${t.tasa ? bs(d.usd * t.tasa) : ''}</small></span><span class="track"><span style="width:${d.usd / mx * 100}%"></span></span></li>`;
+  const nf = n => `${n} ${n === 1 ? 'factura' : 'facturas'}`;
+  el.innerHTML = `<h2 class="card-title">Calendario de pagos</h2><p class="card-sub">Proveedores: lo que toca pagar cada semana.</p>
+    <ul class="cal">${li('Ya vencido', nf(venc.n), venc, 'due')}
+    ${sem.map(s => li(s.rot, `${fmtDayShort(s.a)} al ${fmtDayShort(s.b)} · ${nf(s.n)}`, s)).join('')}
+    ${desp.n ? li('Más adelante', `después del ${fmtDayShort(sem[4].b)} · ${nf(desp.n)}`, desp) : ''}</ul>`;
+}
+
+/* ---------- Facturas ---------- */
+const COLS = [
+  {k:'p', t:'PROVEEDOR', txt:1}, {k:'doc', t:'DOCUMENTO', txt:1}, {k:'fe', t:'F.EMISION', fecha:1},
+  {k:'base', t:'BASE IMPONIBLE', suma:1}, {k:'exento', t:'EXENTO', suma:1}, {k:'iva', t:'IVA', suma:1},
+  {k:'total', t:'TOTAL FACTURA', suma:1}, {k:'usd', t:'$', suma:1}, {k:'ret', t:'RETENCION', suma:1}, {k:'fv', t:'F.VCTO.', fecha:1},
+  {k:'porPagar', t:'POR PAGAR MENOS RETENCION', suma:1}, {k:'tasa', t:'TASA BCV FACT', tasa:1}, {k:'deudaUsd', t:'DEUDA EN USD', suma:1},
+  {k:'dias', t:'Días de vencimiento'}, {k:'status', t:'STATUS', txt:1}, {k:'bsHoy', t:'Bs. a la tasa en uso', suma:1, extra:1}
+];
+function ordenadas(fs){
+  if(!orden.col) return fs;
+  const c = COLS.find(x => x.k === orden.col);
+  return fs.slice().sort((a, b) => { const x = a[orden.col], y = b[orden.col]; return (c.txt || c.fecha ? String(x || '').localeCompare(String(y || ''), 'es', {numeric:true}) : (x || 0) - (y || 0)) * orden.dir; });
+}
+function celda(c, f){
+  const v = f[c.k], L = `data-label="${esc(c.t)}"`;
+  if(c.k === 'p') return `<td class="wide">${who(f.p)}</td>`;
+  if(c.k === 'doc') return `<td class="code" ${L}>${esc(v)}</td>`;
+  if(c.fecha) return `<td ${L}>${fFecha(v)}</td>`;
+  if(c.tasa) return `<td class="r" ${L}>${v ? fmtTasa(v) : '<span class="neg">sin tasa</span>'}</td>`;
+  if(c.k === 'dias') return `<td class="r ${v > 0 ? 'neg' : v >= -3 ? 'warn' : ''}" ${L}>${v}</td>`;
+  if(c.k === 'status') return `<td class="c" ${L}><span class="status ${f.vencido ? 'void' : 'ok'}">${v}</span></td>`;
+  if(c.k === 'deudaUsd') return `<td class="r" ${L}><span class="price">${fmt(v)}</span></td>`;
+  if(c.extra) return `<td class="r" ${L}><b>${v == null ? '—' : fmt(v)}</b></td>`;
+  return `<td class="r${v ? '' : ' zero'}" ${L}>${v ? fmt(v) : '<span class="muted">0,00</span>'}</td>`;
+}
+function renderFacturas(){
+  const {t, sel:fs} = vista, R = CXP.resumen(fs);
+  $('facSummary').textContent = activas().length
+    ? `Deuda ${usd(R.usd)} · vencido ${usd(R.vencido)}. Los días y el estado se calculan al ${fmtDay(hoy)}; la última columna convierte la deuda en USD a la tasa en uso.`
+    : 'Las facturas aparecen aquí cuando se registran o se carga el Excel de cuentas por pagar.';
+  const vacio = $('facEmpty');
+  if(!fs.length){ $('facTable').innerHTML = ''; vacio.hidden = false; vacio.innerHTML = `<b>${vista.deEmp.length ? 'Ninguna factura coincide con los filtros' : 'No hay facturas de proveedores'}</b>${vista.deEmp.length ? 'Quita algún filtro para verlas todas.' : ''}`; return; }
+  vacio.hidden = true;
+  const cab = COLS.map(c => `<th class="${c.txt || c.fecha ? (c.k === 'status' ? 'c' : '') : 'r'}" aria-sort="${orden.col === c.k ? (orden.dir > 0 ? 'ascending' : 'descending') : 'none'}"><button class="sort${orden.col === c.k ? ' on' : ''}" data-ord="${c.k}">${esc(c.t)}<i aria-hidden="true">${orden.col === c.k ? (orden.dir > 0 ? '▲' : '▼') : '↕'}</i></button></th>`).join('');
+  const sum = k => fs.reduce((s, f) => s + (f[k] || 0), 0);
+  const pie = COLS.map((c, i) => i === 0 ? `<td class="wide">Total · ${fs.length} facturas</td>` : c.suma ? `<td class="r" data-label="${esc(c.t)}">${c.extra && !t.tasa ? '—' : fmt(sum(c.k))}</td>` : '<td></td>').join('');
+  /* en teléfono, una ficha por factura: se muestran 25 y el resto a pedido */
+  const corto = window.matchMedia('(max-width:640px)').matches && !verTodas && fs.length > 25;
+  const lista = corto ? ordenadas(fs).slice(0, 25) : ordenadas(fs);
+  $('facTable').innerHTML = `<thead><tr>${cab}</tr></thead><tbody>${lista.map(f => `<tr>${COLS.map(c => celda(c, f)).join('')}</tr>`).join('')}</tbody><tfoot><tr>${pie}</tr></tfoot>`;
+  $('facMas').hidden = !corto;
+  $('facMasBtn').textContent = `Mostrar las ${fs.length} facturas`;
+}
+
+/* ---------- Financiero ---------- */
+const nomMes = m => { const [y, k] = m.split('-'); return CXP.titulo(CXP.MESES[+k - 1]) + ' ' + y; };
+function estadoCuota(c){
+  if(c.pagada === true) return ['Pagada', 'ok'];
+  if(!c.fecha) return ['Sin fecha', 'hist'];
+  const d = dias(c.fecha, hoy);
+  return d > 0 ? ['Fecha cumplida', 'soon'] : d === 0 ? ['Vence hoy', 'soon'] : ['Por vencer', 'hist'];
+}
+function cuotasDelMes(){ return vista.cuotas.filter(c => c.mes === finMes).sort((a, b) => (a.fecha || '9').localeCompare(b.fecha || '9')); }
+function renderFinanciero(){
+  const {t, cuotas} = vista, el = $('finBody');
+  const meses = [...new Set(cuotas.map(c => c.mes))].sort();
+  if(!meses.length){
+    $('finMes').innerHTML = ''; $('finSummary').textContent = '';
+    el.innerHTML = `<div class="card"><div class="empty"><b>No hay cuotas de préstamos${emp ? ' de esta empresa' : ''}</b>Se leen de las hojas por mes del Excel de cuentas por pagar.</div></div>`; return;
+  }
+  if(!meses.includes(finMes)) finMes = meses.includes(hoy.slice(0, 7)) ? hoy.slice(0, 7) : meses[meses.length - 1];
+  $('finMes').innerHTML = meses.slice().reverse().map(m => `<option value="${m}"${m === finMes ? ' selected' : ''}>${nomMes(m)}</option>`).join('');
+  const verEmp = !emp && empresas().length > 1;
+  const cs = cuotasDelMes();
+  const S = {usd:0, cap:0, int:0, cumpl:0, nC:0, pend:0, nP:0}, B = {};
+  cs.forEach(c => {
+    S.usd += c.usd; S.cap += c.cap; S.int += c.int;
+    if(c.fecha && dias(c.fecha, hoy) > 0){ S.cumpl += c.usd; S.nC++; } else { S.pend += c.usd; S.nP++; }
+    const b = B[c.banco] || (B[c.banco] = {banco:c.banco, n:0, usd:0, cap:0, int:0, prox:null});
+    b.n++; b.usd += c.usd; b.cap += c.cap; b.int += c.int;
+    if(c.fecha && dias(c.fecha, hoy) <= 0 && (!b.prox || c.fecha < b.prox)) b.prox = c.fecha;
+  });
+  $('finSummary').textContent = `${nomMes(finMes)} · ${emp ? marca(emp).nombre : 'todas las empresas'}. El estado sale de la fecha de cada cuota: el Excel no indica cuáles están pagadas.`;
+  const bancos = Object.values(B).sort((a, b) => b.usd - a.usd), mxB = Math.max(...bancos.map(b => b.usd), 1);
+  const porMes = meses.map(m => { const x = cuotas.filter(c => c.mes === m); return {m, usd:x.reduce((s, c) => s + c.usd, 0), int:x.reduce((s, c) => s + c.int, 0)}; });
+  const mxM = Math.max(...porMes.map(x => x.usd), 1), ci = S.cap + S.int;
+  const kv = v => `<small>US$</small>${fmt(v)}`;
+  el.innerHTML = `<div class="card"><div class="kpis">
+      <div class="main-k"><div class="k">Cuotas de ${nomMes(finMes).toLowerCase()}</div><div class="v">${kv(S.usd)}</div><div class="s">${cs.length} cuotas${t.tasa ? ' · ' + bs(S.usd * t.tasa) : ''}</div></div>
+      <div><div class="k">Capital</div><div class="v">${kv(S.cap)}</div><div class="s">${fmtPct(ci ? S.cap / ci : 0)} de capital más intereses</div></div>
+      <div><div class="k">Intereses y asesorías</div><div class="v">${kv(S.int)}</div><div class="s">${fmtPct(ci ? S.int / ci : 0)}</div></div>
+      <div><div class="k">Con fecha ya cumplida</div><div class="v">${kv(S.cumpl)}</div><div class="s">${S.nC} cuotas antes del ${fmtDay(hoy)}</div></div>
+      <div><div class="k">Por vencer</div><div class="v">${kv(S.pend)}</div><div class="s">${S.nP} cuotas${t.tasa ? ' · ' + bs(S.pend * t.tasa) : ''}</div></div>
+    </div></div>
+    <div class="split">
+      <div class="card">
+        <div class="card-pad" style="padding-bottom:12px;"><h2 class="card-title">Cuotas por banco</h2><p class="card-sub">${nomMes(finMes)}, en US$.</p></div>
+        <div class="table-wrap"><table><thead><tr><th>Banco</th><th class="r">Cuotas</th><th class="r">Capital</th><th class="r">Intereses</th><th class="r">Total US$</th><th style="min-width:150px;">Parte del mes</th><th class="r">Próxima fecha</th></tr></thead>
+        <tbody>${bancos.map(b => `<tr><td>${who(b.banco)}</td><td class="r">${b.n}</td><td class="r">${fmt(b.cap)}</td><td class="r">${fmt(b.int)}</td><td class="r"><span class="price">${fmt(b.usd)}</span></td>
+          <td><div class="share"><span>${fmtPct(S.usd ? b.usd / S.usd : 0)}</span><div><div class="bar" style="width:${Math.max(b.usd / mxB * 100, 2)}%"><span class="p" style="width:100%"></span></div></div></div></td><td class="r">${b.prox ? fFecha(b.prox) : '<span class="muted">—</span>'}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td>Total</td><td class="r">${cs.length}</td><td class="r">${fmt(S.cap)}</td><td class="r">${fmt(S.int)}</td><td class="r">${fmt(S.usd)}</td><td></td><td></td></tr></tfoot></table></div>
+      </div>
+      <div class="card card-pad">
+        <h2 class="card-title">Cuotas por mes</h2><p class="card-sub">Total en US$; en ámbar, intereses y asesorías. Pulsa un mes para verlo.</p>
+        <div class="months">${porMes.map(x => `<button class="month${x.m === finMes ? ' on' : ''}" data-mes="${x.m}" title="${nomMes(x.m)}: ${usd(x.usd)}">
+          <span class="m-amt">${fmtCorto(x.usd)}</span><span class="m-bar" style="height:${Math.max(x.usd / mxM * 68, 1)}%"><span class="i" style="height:${x.usd ? Math.min(x.int / x.usd, 1) * 100 : 0}%"></span><span class="c"></span></span>
+          <span class="m-lbl">${CXP.MES_CORTO[+x.m.slice(5) - 1]}</span></button>`).join('')}</div>
+      </div>
+    </div>
+    <div class="card long">
+      <div class="card-pad" style="padding-bottom:12px;"><h2 class="card-title">Detalle de cuotas</h2><p class="card-sub">${nomMes(finMes)}, por fecha.</p></div>
+      <div class="table-wrap tall"><table><thead><tr><th>Fecha</th><th>Cuota o préstamo</th><th>Banco</th>${verEmp ? '<th>Empresa</th>' : ''}<th class="r">Capital</th><th class="r">Intereses</th><th class="r">Cuota $</th><th class="r">Bs. a la tasa en uso</th><th class="r">Días</th><th class="c">Estado</th></tr></thead>
+      <tbody>${cs.map(c => { const e = estadoCuota(c), d = c.fecha ? dias(c.fecha, hoy) : null; return `<tr><td>${fFecha(c.fecha)}</td><td class="code">${esc(c.cuota) || '—'}</td><td>${who(c.banco)}</td>${verEmp ? `<td>${esc(marca(c.empresa || CXP.EMPRESA).corto)}</td>` : ''}
+        <td class="r">${fmt(c.cap)}</td><td class="r">${fmt(c.int)}</td><td class="r"><span class="price">${fmt(c.usd)}</span></td><td class="r">${t.tasa ? fmt(c.usd * t.tasa) : '—'}</td><td class="r">${d == null ? '—' : d}</td><td class="c"><span class="status ${e[1]}">${e[0]}</span></td></tr>`; }).join('')}</tbody>
+      <tfoot><tr><td>Total</td><td></td><td></td>${verEmp ? '<td></td>' : ''}<td class="r">${fmt(S.cap)}</td><td class="r">${fmt(S.int)}</td><td class="r">${fmt(S.usd)}</td><td class="r">${t.tasa ? fmt(S.usd * t.tasa) : '—'}</td><td></td><td></td></tr></tfoot></table></div>
+    </div>`;
+}
+
+/* =========================================================
+   Filtros, pestañas y exportación
+   ========================================================= */
+function setTab(name){
+  if(name === 'financiero' && $('tabFin').hidden) name = 'resumen';
+  currentTab = name;
+  document.querySelectorAll('.tabpanel').forEach(p => p.hidden = p.id !== 'p-' + name);
+  document.querySelectorAll('.tab').forEach(b => { const on = b.dataset.tab === name; b.classList.toggle('on', on); b.setAttribute('aria-selected', String(on)); });
+  ses.set(K.tab, name);
+  window.scrollTo({top:0});
+}
+document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
+$('empSeg').addEventListener('click', e => { const b = e.target.closest('[data-emp]'); if(!b) return; emp = b.dataset.emp; ses.set(K.emp, emp); filtro.prov = ''; render(); });
+['fProv', 'fProv2'].forEach(id => $(id).addEventListener('change', e => { filtro.prov = e.target.value; render(); }));
+['fEstado', 'fEstado2'].forEach(id => $(id).addEventListener('click', e => {
+  const b = e.target.closest('button'); if(!b) return;
+  filtro.estado = b.dataset.v;
+  if(filtro.tramo && filtro.estado && CXP.TRAMOS.find(x => x.id === filtro.tramo).grupo !== filtro.estado) filtro.tramo = '';
+  render();
+}));
+$('fHoy').addEventListener('change', e => { hoy = CXP.esISO(e.target.value) ? e.target.value : CXP.hoyISO(); render(); });
+$('facQ').addEventListener('input', e => { filtro.q = e.target.value.trim(); render(); });
+document.addEventListener('click', e => {
+  const q = e.target.closest('[data-quitar]');
+  if(q){ if(q.dataset.quitar === 'hoy') hoy = CXP.hoyISO(); else filtro[q.dataset.quitar] = ''; render(); }
+});
+$('resBody').addEventListener('click', e => {
+  const tr = e.target.closest('[data-tramo]');
+  if(tr){ filtro.tramo = filtro.tramo === tr.dataset.tramo ? '' : tr.dataset.tramo; render(); if(filtro.tramo) setTab('facturas'); return; }
+  const p = e.target.closest('[data-prov]');
+  if(p){ filtro.prov = filtro.prov === p.dataset.prov ? '' : p.dataset.prov; render(); window.scrollTo({top:0}); }
+});
+$('resBody').addEventListener('keydown', e => { if((e.key === 'Enter' || e.key === ' ') && e.target.matches('tr[data-prov]')){ e.preventDefault(); e.target.click(); } });
+$('facTable').addEventListener('click', e => {
+  const b = e.target.closest('[data-ord]'); if(!b) return;
+  const k = b.dataset.ord;
+  orden = orden.col === k ? (orden.dir > 0 ? {col:k, dir:-1} : {col:'', dir:1}) : {col:k, dir:1};
+  render();
+});
+$('finMes').addEventListener('change', e => { finMes = e.target.value; render(); });
+$('finBody').addEventListener('click', e => { const b = e.target.closest('[data-mes]'); if(b){ finMes = b.dataset.mes; render(); } });
+$('facMasBtn').addEventListener('click', () => { verTodas = true; render(); });
+$('facPrint').addEventListener('click', () => { verTodas = true; render(); window.print(); });
+$('finPrint').addEventListener('click', () => window.print());
+
+/* Excel si la librería cargó; si no, CSV para Excel */
+function exportar(nombre, hoja, filas){
+  if(typeof XLSX !== 'undefined'){
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(filas), hoja);
+    XLSX.writeFile(wb, nombre + '.xlsx');
+  } else {
+    const q = v => typeof v === 'number' ? String(v).replace('.', ',') : `"${String(v ?? '').replace(/"/g, '""')}"`;
+    descargar(nombre + '.csv', new Blob(['\ufeff' + filas.map(f => f.map(q).join(';')).join('\r\n')], {type:'text/csv;charset=utf-8'}));
+  }
+}
+const r2 = n => n == null ? '' : Math.round(n * 100) / 100;
+function exportarFacturas(){
+  const fs = ordenadas(vista.sel);
+  if(!fs.length){ toast('No hay facturas para descargar.', true); return; }
+  exportar(`cxp-proveedores-${hoy}`, 'PROVEEDORES', [COLS.map(c => c.t)].concat(fs.map(f => COLS.map(c => c.fecha ? fFecha(f[c.k]) : c.txt ? f[c.k] : c.tasa ? f[c.k] : c.k === 'dias' ? f.dias : r2(f[c.k])))));
+}
+$('facXlsx').addEventListener('click', exportarFacturas);
+$('exportXlsx').addEventListener('click', exportarFacturas);
+$('finXlsx').addEventListener('click', () => {
+  const cs = cuotasDelMes();
+  if(!cs.length){ toast('No hay cuotas para descargar.', true); return; }
+  exportar(`cxp-financiero-${finMes}`, 'CUOTAS', [['EMPRESA', 'FECHA', 'CUOTA', 'BANCO', 'CAPITAL', 'INTERESES', 'CUOTA $', 'Bs. a la tasa en uso']].concat(cs.map(c => [c.empresa, fFecha(c.fecha), c.cuota, c.banco, r2(c.cap), r2(c.int), r2(c.usd), vista.t.tasa ? r2(c.usd * vista.t.tasa) : ''])));
+});
+
+/* =========================================================
+   Panel administrativo
+   ========================================================= */
+async function sha256(str){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+function setAdminOpen(open){
+  $('adminBody').hidden = !open;
+  $('adminToggle').setAttribute('aria-expanded', String(open));
+  ses.set(K.adminOpen, open ? '1' : '0');
+}
+$('adminToggle').addEventListener('click', () => { const open = $('adminBody').hidden; setAdminOpen(open); if(open && !adminUnlocked) $('pwd').focus(); });
+async function tryUnlock(){
+  let ok = false;
+  try{ ok = (await sha256($('pwd').value)) === PASSWORD_HASH; }catch(e){ $('gateErr').textContent = 'Este navegador no permite validar la contraseña aquí. Abre el sitio desde su enlace https.'; return; }
+  if(ok){ adminUnlocked = true; ses.set(K.admin, '1'); $('pwd').value = ''; $('gateErr').textContent = ''; renderAdmin(); pintarLogos(); }
+  else $('gateErr').textContent = 'Contraseña incorrecta.';
+}
+$('unlockBtn').addEventListener('click', tryUnlock);
+$('pwd').addEventListener('keydown', e => { if(e.key === 'Enter') tryUnlock(); });
+$('lockBtn').addEventListener('click', () => { adminUnlocked = false; ses.del(K.admin); renderAdmin(); });
+
+function renderAdmin(){
+  $('gate').hidden = adminUnlocked;
+  $('adminTools').hidden = !adminUnlocked;
+  $('adminState').textContent = adminUnlocked ? 'Abierto' : 'Bloqueado';
+  if(!adminUnlocked) return;
+  const nA = activas().length, nT = datos.proveedores.length;
+  $('sourceNote').innerHTML = nT
+    ? `Registro: <b>${nA}</b> facturas por pagar y ${nT - nA} pagadas, anuladas o retiradas · ${esc(origen)}${datos.archivo ? ` · último Excel: ${esc(datos.archivo)}` : ''}.`
+    : 'El registro está vacío. Selecciona el Excel de cuentas por pagar o registra facturas a mano.';
+  /* lista de logos */
+  const m = new Map(), pon = (n, tipo) => { const s = slug(n); if(s && !m.has(s)) m.set(s, {nombre:n, tipo}); };
+  activas().forEach(f => pon(f.p, 'Proveedor'));
+  (datos.financiero || []).forEach(c => { pon(c.banco, 'Banco'); });
+  empresas().forEach(e => { if(!MARCAS.some(x => x.es(slug(e)))) pon(e, 'Empresa'); });
+  const L = [...m.entries()].sort((a, b) => b[1].tipo.localeCompare(a[1].tipo) || a[1].nombre.localeCompare(b[1].nombre));
+  $('logoList').innerHTML = L.map(([s, x]) => `<li>${mono(x.nombre)}<div style="min-width:0"><b title="${esc(x.nombre)}">${esc(x.nombre)}</b><small>${x.tipo} · logos/${esc(s)}.png</small></div>
+    <label class="btn btn-ghost btn-sm">Subir<input type="file" accept="image/*" data-subir="${esc(s)}" aria-label="Subir logo de ${esc(x.nombre)}"></label></li>`).join('') || '<li><small>Carga el Excel para ver la lista.</small></li>';
+}
+/* --- Lectura del Excel: carga masiva al registro --- */
+const modoImp = () => (document.querySelector('input[name=impMode]:checked') || {}).value || 'sumar';
+function vistaPrevia(){
+  if(!pendiente) return;
+  const d = CXP.leerLibro(XLSX, pendiente.wb, pendiente.nombre, {sinFinanciero: !$('conFin').checked});
+  const imp = CXP.importar(datos, d, modoImp(), usuario(), $('conFin').checked && d.financiero.length > 0);
+  pendiente.datos = d; pendiente.imp = imp;
+  const fs = d.proveedores.map(f => CXP.factura(f, CXP.hoyISO(), null)), R = CXP.resumen(fs), r = imp.res;
+  const s = k => fs.reduce((a, f) => a + f[k], 0);
+  $('importArea').hidden = false;
+  $('applyImport').disabled = !d.proveedores.length;
+  $('importPreview').innerHTML = d.proveedores.length ? `<dl>
+      <dt>Facturas · proveedores</dt><dd>${R.n} · ${R.proveedores.length}</dd>
+      <dt>Base imponible</dt><dd>${bs(s('base'))}</dd><dt>Exento</dt><dd>${bs(s('exento'))}</dd><dt>IVA</dt><dd>${bs(s('iva'))}</dd>
+      <dt>Total factura</dt><dd>${bs(R.total)}</dd><dt>$</dt><dd>${usd(R.totalUsd)}</dd><dt>Retención</dt><dd>${bs(R.ret)}</dd>
+      <dt>Por pagar menos retención</dt><dd>${bs(R.bs)}</dd><dt>Deuda en USD</dt><dd>${usd(R.usd)}</dd>
+      <dt>Cuotas de préstamos</dt><dd>${d.financiero.length} en ${new Set(d.financiero.map(c => c.mes)).size} meses</dd></dl>
+      <div class="fine" style="color:var(--text)">En el registro: ${r.nuevas} nuevas · ${r.actualizadas} actualizadas · ${r.iguales} sin cambios${r.omitidas ? ` · ${r.omitidas} omitidas por estar pagadas o anuladas` : ''}${r.retiradas ? ` · ${r.retiradas} se retiran` : ''}</div>
+      ${d.avisos.length ? `<ul>${d.avisos.slice(0, 12).map(a => `<li>${esc(a.texto)}</li>`).join('')}${d.avisos.length > 12 ? `<li>… y ${d.avisos.length - 12} observaciones más</li>` : ''}</ul>` : '<div class="fine">Sin observaciones: compara los totales con tu hoja.</div>'}`
+    : `<b>${esc((d.avisos[0] || {}).texto || 'La hoja de proveedores no tiene facturas.')}</b>`;
+}
+function leerExcel(file){
+  if(!file) return;
+  if(typeof XLSX === 'undefined'){ toast('No se pudo cargar el lector de Excel. Revisa la conexión a internet y recarga la página.', true); return; }
+  $('fileName').textContent = file.name;
+  const fr = new FileReader();
+  fr.onerror = () => toast('No se pudo leer el archivo.', true);
+  fr.onload = () => {
+    try{ pendiente = {wb: XLSX.read(new Uint8Array(fr.result), {type:'array'}), nombre:file.name}; vistaPrevia(); }
+    catch(e){ pendiente = null; $('importArea').hidden = true; toast('El archivo no se pudo interpretar: ' + e.message, true); }
+  };
+  fr.readAsArrayBuffer(file);
+}
+$('excelFile').addEventListener('change', e => leerExcel(e.target.files[0]));
+$('conFin').addEventListener('change', vistaPrevia);
+document.querySelectorAll('input[name=impMode]').forEach(r => r.addEventListener('change', vistaPrevia));
+const fd = $('fileDrop');
+['dragenter', 'dragover'].forEach(ev => fd.addEventListener(ev, e => { e.preventDefault(); fd.classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => fd.addEventListener(ev, e => { e.preventDefault(); fd.classList.remove('over'); }));
+fd.addEventListener('drop', e => leerExcel(e.dataTransfer.files[0]));
+function cerrarImport(){ pendiente = null; $('importArea').hidden = true; $('excelFile').value = ''; $('fileName').textContent = 'Ningún archivo seleccionado'; }
+$('cancelImport').addEventListener('click', cerrarImport);
+$('applyImport').addEventListener('click', async () => {
+  if(!pendiente || !pendiente.imp) return;
+  vistaPrevia();                                   /* recalcula contra el registro de este momento */
+  const {imp, datos:d} = pendiente, r = imp.res;
+  const ok = await confirmDialog({title:'¿Está seguro?', danger: modoImp() === 'reemplazar' && r.retiradas > 0,
+    html:`Se llevará <b>${esc(d.archivo)}</b> al registro que comparte todo el equipo.<div class="sum"><div><span>Facturas nuevas</span><b>${r.nuevas}</b></div><div><span>Actualizadas</span><b>${r.actualizadas}</b></div><div><span>Sin cambios</span><b>${r.iguales}</b></div>${r.omitidas ? `<div><span>Omitidas (pagadas o anuladas)</span><b>${r.omitidas}</b></div>` : ''}${r.retiradas ? `<div><span>Se retiran por no venir en el Excel</span><b>${r.retiradas}</b></div>` : ''}<div><span>Cuotas de préstamos</span><b>${imp.fin ? d.financiero.length : 'no se tocan'}</b></div></div>`, okText:'Cargar al registro'});
+  if(!ok) return;
+  datos = imp.datos; imp.cambiadas.forEach(u => pend.add(u)); if(imp.fin) finPend = true;
+  persistir(); cerrarImport(); render();
+  toast(conectado() ? 'Excel cargado. Subiendo al registro…' : 'Excel cargado en este equipo. Falta conectarlo para compartirlo.');
+  sync(false);
+});
+
+/* --- Conexión con GitHub: registro (rama de datos), tasa y logos (rama del sitio) --- */
+function ghFill(){
+  const c = store.get(K.gh, {}), auto = CXP.repoDePagina().split('/');
+  $('ghOwner').value = c.owner || auto[0] || '';
+  $('ghRepo').value = c.repo || auto[1] || '';
+  $('ghBranch').value = c.branch || 'main';
+  $('ghDataBranch').value = c.dataBranch || 'datos';
+  $('ghCxpPath').value = c.cxpPath || DATA_URL;
+  $('ghTasaPath').value = c.tasaPath || TASA_URL;
+  $('ghRemember').checked = !!c.remember;
+  $('ghToken').value = ses.get(K.ghToken) || (c.remember ? (localStorage.getItem(K.ghTokenLocal) || '') : '');
+  $('ghUser').value = usuario();
+  ghStatus();
+}
+function ghConfig(){
+  return {owner: $('ghOwner').value.trim(), repo: $('ghRepo').value.trim(), branch: $('ghBranch').value.trim() || 'main',
+    dataBranch: $('ghDataBranch').value.trim() || 'datos',
+    cxpPath: ($('ghCxpPath').value.trim() || DATA_URL).replace(/^\//, ''), tasaPath: ($('ghTasaPath').value.trim() || TASA_URL).replace(/^\//, ''), remember: $('ghRemember').checked};
+}
+const ghToken = () => $('ghToken').value.trim();
+const conectado = () => { const c = ghConfig(); return !!(c.owner && c.repo && ghToken()); };
+function ghSave(){
+  store.set(K.gh, ghConfig());
+  store.set(K.user, $('ghUser').value.trim());
+  ses.set(K.ghToken, ghToken());
+  try{ if($('ghRemember').checked && ghToken()) localStorage.setItem(K.ghTokenLocal, ghToken()); else localStorage.removeItem(K.ghTokenLocal); }catch(e){}
+}
+function ghStatus(msg, isErr){
+  const el = $('ghStatus'), last = store.get(K.ghSync, null);
+  el.style.color = isErr ? 'var(--danger)' : '';
+  el.textContent = msg || (last ? `Última subida desde este equipo: ${fmtDate(last.fecha)} (${last.accion}).` : 'Este equipo todavía no ha subido cambios.');
+}
+function ghReady(){
+  const c = ghConfig();
+  if(!c.owner || !c.repo || !ghToken()){ toast('Completa usuario, repositorio y token en «Conexión con GitHub».', true); return null; }
+  ghSave();
+  return c;
+}
+const ghRepoApi = c => `https://api.github.com/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}`;
+const ghApi = (c, path) => `${ghRepoApi(c)}/contents/${path.split('/').map(encodeURIComponent).join('/')}`;
+const ghHeaders = () => ({Authorization:`Bearer ${ghToken()}`, Accept:'application/vnd.github+json', 'X-GitHub-Api-Version':'2022-11-28'});
+async function ghError(res){
+  let m = ''; try{ m = (await res.json()).message || ''; }catch(e){}
+  let t = m || ('GitHub respondió ' + res.status);
+  if(res.status === 401) t = 'Token inválido o vencido.';
+  else if(res.status === 403 || res.status === 429) t = /rate limit|secondary/i.test(m) ? 'GitHub pide esperar un momento por la cantidad de consultas. Se reintenta solo.' : 'El token no tiene permiso de escritura. Debe tener «Contents: Read and write» sobre este repositorio.';
+  else if(res.status === 404) t = 'No se encontró el repositorio o la rama. Revisa usuario, repositorio y rama.';
+  else if(res.status === 409) t = 'Otro equipo guardó al mismo tiempo.';
+  const e = new Error(t); e.status = res.status; e.detalle = m; return e;
+}
+function toBase64(str){
+  const bytes = new TextEncoder().encode(str); let bin = '';
+  for(let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+const fromBase64 = b => new TextDecoder().decode(Uint8Array.from(atob(String(b).replace(/\s/g, '')), ch => ch.charCodeAt(0)));
+/* Lee un archivo del repositorio. Con «conocida» (ETag) GitHub responde 304 si nadie lo cambió, y esa consulta no gasta cuota. */
+async function ghGet(c, path, rama, conocida){
+  const h = ghHeaders(); if(conocida) h['If-None-Match'] = conocida;
+  const res = await fetch(`${ghApi(c, path)}?ref=${encodeURIComponent(rama || c.branch)}`, {headers:h, cache:'no-store'});
+  if(res.status === 304) return {igual:true};
+  if(res.status === 404) return {sha:null, json:null, falta:true};
+  if(!res.ok) throw await ghError(res);
+  const j = await res.json(); let txt = '';
+  if(j.content) txt = fromBase64(j.content);
+  else if(j.sha){                                  /* archivos de más de 1 MB llegan sin contenido: se pide el blob */
+    const b = await fetch(`${ghRepoApi(c)}/git/blobs/${j.sha}`, {headers:ghHeaders(), cache:'no-store'});
+    if(!b.ok) throw await ghError(b);
+    txt = fromBase64((await b.json()).content);
+  }
+  let json = null; try{ json = JSON.parse(txt); }catch(e){}
+  return {sha:j.sha, json, etag:res.headers.get('ETag')};
+}
+async function ghPut(c, path, b64, message, sha, rama){
+  const res = await fetch(ghApi(c, path), {method:'PUT', headers:{...ghHeaders(), 'Content-Type':'application/json'},
+    body: JSON.stringify({message, content:b64, branch:rama || c.branch, ...(sha ? {sha} : {})})});
+  if(!res.ok) throw await ghError(res);
+}
+/* La rama del registro se crea sola, a partir de la del sitio, la primera vez que alguien guarda */
+async function ghCrearRama(c){
+  const r = await fetch(`${ghRepoApi(c)}/git/ref/heads/${encodeURIComponent(c.branch)}`, {headers:ghHeaders(), cache:'no-store'});
+  if(!r.ok) throw await ghError(r);
+  const sha = (await r.json()).object.sha;
+  const p = await fetch(`${ghRepoApi(c)}/git/refs`, {method:'POST', headers:{...ghHeaders(), 'Content-Type':'application/json'}, body: JSON.stringify({ref:'refs/heads/' + c.dataBranch, sha})});
+  if(!p.ok && p.status !== 422) throw await ghError(p);     /* 422: otro equipo la creó en el mismo instante */
+}
+const ghOk = accion => { store.set(K.ghSync, {fecha:new Date().toISOString(), accion}); ghStatus(); };
+$('ghSaveBtn').addEventListener('click', () => { ghSave(); toast('Configuración guardada'); etag = null; render(); sync(false); });
+$('ghToken').addEventListener('input', renderSync);
+$('ghTestBtn').addEventListener('click', async () => {
+  const c = ghReady(); if(!c) return;
+  ghStatus('Probando la conexión…');
+  try{
+    const res = await fetch(`${ghRepoApi(c)}/branches/${encodeURIComponent(c.branch)}`, {headers:ghHeaders()});
+    if(!res.ok) throw await ghError(res);
+    ghStatus(`Conexión correcta con ${c.owner}/${c.repo}, rama ${c.branch}.`); toast('Conexión correcta'); etag = null; render(); sync(false);
+  }catch(e){ ghStatus(e.message || 'Sin conexión con GitHub.', true); }
+});
+
+/* =========================================================
+   Sincronización entre equipos
+   Cada guardado: lee el registro, le suma los cambios de este equipo y lo sube indicando
+   la versión que leyó. Si otro equipo subió en ese instante GitHub lo rechaza (409) y se
+   repite con el registro nuevo, así ningún cambio pisa a otro.
+   ========================================================= */
+let sincronizando = null, otraVez = false, ultimaSync = 0, ultimoError = '', ocupado = false, reintento = 0;
+const espera = ms => new Promise(r => setTimeout(r, ms));
+function sync(manual){
+  if(sincronizando){ otraVez = true; return sincronizando; }
+  sincronizando = (async () => {
+    ocupado = true; renderSync();
+    try{ await sincronizar(); ultimoError = ''; ultimaSync = Date.now(); }
+    catch(e){
+      ultimoError = e.message || 'Sin conexión con GitHub.'; if(manual) toast('No se pudo sincronizar: ' + ultimoError, true);
+      if(pend.size || finPend){ clearTimeout(reintento); reintento = setTimeout(() => sync(false), 4000 + Math.random() * 4000); }   /* lo pendiente no espera al siguiente sondeo */
+    }
+    finally{ ocupado = false; sincronizando = null; renderSync(); if(otraVez){ otraVez = false; sync(false); } }
+  })();
+  return sincronizando;
+}
+async function sincronizar(){
+  const c = ghConfig(), hayCambios = () => pend.size > 0 || finPend;
+  if(!conectado()){                                  /* solo lectura */
+    const r = await leerRemoto();
+    if(r && !r.igual){ datos = CXP.mezclar(r.json, datos, pend, finPend); origen = r.via; persistir(); render(); }
+    return;
+  }
+  for(let intento = 0; intento < 40; intento++){
+    const r = await ghGet(c, c.cxpPath, c.dataBranch, hayCambios() ? null : etag);
+    if(r.igual) return;
+    const base = r.json && Array.isArray(r.json.proveedores) ? r.json : (r.falta ? await semilla() : null);
+    const enviados = new Map([...pend].map(u => [u, (porUid(u) || {}).mod])), finEnv = finPend ? datos.finMod : null;
+    const unido = CXP.mezclar(base, datos, pend, finPend);
+    if(!hayCambios()){ datos = unido; etag = r.etag || null; origen = 'registro compartido'; persistir(); render(); return; }
+    try{
+      const n = enviados.size + (finEnv ? 1 : 0);
+      await ghPut(c, c.cxpPath, toBase64(JSON.stringify(unido)), `CXP · ${usuario() || 'sin nombre'} · ${n} ${n === 1 ? 'cambio' : 'cambios'}`, r.sha, c.dataBranch);
+    }catch(e){
+      if(e.status === 409 || e.status === 422){ await espera(40 + Math.random() * 260); continue; }   /* otro equipo subió primero: se repite con su versión */
+      if(e.status === 404 && r.falta){ await ghCrearRama(c); continue; }
+      if((e.status === 403 || e.status === 429) && /rate limit|secondary/i.test(e.detalle || '')){ await espera(Math.min(30000, 3000 * (intento + 1))); continue; }
+      throw e;
+    }
+    /* subido: dejan de estar pendientes los cambios que no se volvieron a tocar mientras tanto */
+    enviados.forEach((mod, u) => { const f = porUid(u); if(!f || f.mod === mod) pend.delete(u); });
+    if(finEnv && datos.finMod === finEnv) finPend = false;
+    datos = CXP.mezclar(unido, datos, pend, finPend);
+    etag = null; origen = 'registro compartido'; persistir(); ghOk(`${enviados.size + (finEnv ? 1 : 0)} cambios`); render();
+    if(!hayCambios()) return;
+  }
+  throw new Error('Hay mucha actividad en este momento. Los cambios quedan guardados en este equipo y se reintenta solo.');
+}
+function renderSync(){
+  const b = $('syncBtn'), n = pend.size + (finPend ? 1 : 0), con = conectado();
+  const hace = ultimaSync ? Math.max(0, Math.round((Date.now() - ultimaSync) / 1000)) : null;
+  const cuando = hace == null ? '' : hace < 60 ? ' · hace un momento' : ` · hace ${Math.round(hace / 60)} min`;
+  let cls = 'ok', txt = '';
+  if(ocupado){ cls = 'busy'; txt = n ? `Subiendo ${n} ${n === 1 ? 'cambio' : 'cambios'}…` : 'Actualizando…'; }
+  else if(ultimoError && con){ cls = 'err'; txt = n ? `${n} sin subir · se reintenta` : 'Sin conexión · se reintenta'; }
+  else if(n){ cls = 'pend'; txt = con ? `${n} ${n === 1 ? 'cambio' : 'cambios'} por subir` : `${n} solo en este equipo`; }
+  else if(con){ txt = 'Sincronizado' + cuando; }
+  else { cls = ''; txt = 'Solo lectura' + cuando; }
+  b.className = 'sync ' + cls; $('syncTxt').textContent = txt;
+  b.title = ultimoError && con ? ultimoError : con ? 'Sincronizar ahora' : 'Conecta este equipo para registrar facturas';
+}
+$('syncBtn').addEventListener('click', () => { if(conectado()) sync(true); else { setTab('registrar'); $('cToken').focus(); } });
+$('ghSyncBtn').addEventListener('click', () => { if(ghReady()) sync(true).then(() => { if(!ultimoError) toast('Registro sincronizado'); }); });
+$('ghPullBtn').addEventListener('click', async () => {
+  const n = pend.size + (finPend ? 1 : 0);
+  const ok = await confirmDialog({title:'¿Está seguro?', html: n ? `Se perderán <b>${n}</b> cambios de este equipo que todavía no se han subido, y se volverá a cargar el registro compartido.` : 'Se volverá a cargar el registro compartido desde el repositorio.', okText:'Recargar', danger: n > 0});
+  if(!ok) return;
+  pend.clear(); finPend = false; etag = null; store.del(K.datos); persistir();
+  await cargar(); render(); toast('Registro recargado');
+});
+setInterval(() => { renderSync(); }, 20000);
+let tic = 0;
+setInterval(() => {
+  if(document.visibilityState !== 'visible') return;
+  tic++;
+  if(conectado() || tic % 5 === 0) sync(false);      /* sin token se consulta cada 2,5 minutos */
+}, POLL_MS);
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible' && Date.now() - ultimaSync > 10000) sync(false); });
+window.addEventListener('online', () => sync(false));
+
+/* --- Tasa para todo el equipo --- */
+function docTasa(actual, t){
+  const d = Object.assign({valor:null, fecha:null, actualizada:null, fuente:null, manual:null, historial:[]}, actual || {});
+  if(t.modo === 'manual') d.manual = {valor:t.tasa, fecha:t.fecha || CXP.hoyISO(), nota:'', activo:true};
+  else {
+    Object.assign(d, {valor:t.tasa, fecha:t.fecha, actualizada:new Date().toISOString(), fuente:t.origen});
+    const h = {}; (d.historial || []).forEach(x => { if(x && x.fecha && x.valor) h[x.fecha] = x.valor; }); h[t.fecha] = t.tasa;
+    d.historial = Object.keys(h).sort().slice(-400).map(f => ({fecha:f, valor:h[f]}));
+  }
+  return d;
+}
+const tasaMsg = (m, err) => { const el = $('tasaMsg'); el.textContent = m || ''; el.style.color = err ? 'var(--danger)' : ''; };
+async function publicarTasa(cambio, mensaje, btn){
+  const c = ghReady(); if(!c) return false;
+  btn.disabled = true; tasaMsg('Publicando la tasa…');
+  try{
+    const cur = await ghGet(c, c.tasaPath, c.branch), nuevo = cambio(cur.json || pubTasa);
+    await ghPut(c, c.tasaPath, toBase64(JSON.stringify(nuevo, null, 1)), mensaje, cur.sha, c.branch);
+    pubTasa = nuevo; ghOk('tasa'); tasaMsg('Tasa publicada. El sitio la mostrará en uno o dos minutos.'); toast('Tasa publicada');
+    btn.disabled = false; return true;
+  }catch(e){ tasaMsg(e.status === 409 ? 'La tarea automática actualizó la tasa en ese instante. Vuelve a pulsar el botón.' : (e.message || 'Sin conexión con GitHub.'), true); btn.disabled = false; return false; }
+}
+$('ghPushTasa').addEventListener('click', async () => {
+  const t = tasa();
+  if(t.modo !== 'manual' && t.modo !== 'bcv'){ tasaMsg('Primero pulsa «Actualizar desde el BCV» o usa una tasa manual en la barra superior.', true); return; }
+  const ok = await confirmDialog({title:'¿Está seguro?', html:`Se publicará la tasa <b>Bs. ${fmtTasa(t.tasa)}</b> por US$1 (${t.modo === 'manual' ? 'manual' : esc(t.origen)}, ${fmtDay(t.fecha)}) para todo el equipo.${t.modo === 'manual' ? ' Al ser manual, mandará sobre la del BCV hasta que la quites.' : ''}`, okText:'Publicar tasa'});
+  if(!ok) return;
+  const hecho = await publicarTasa(a => docTasa(a, t), `Tasa ${t.modo === 'manual' ? 'manual' : 'BCV'} ${fmtTasa(t.tasa)} · ${fFecha(t.fecha)}`, $('ghPushTasa'));
+  if(hecho && t.modo === 'manual'){ manualLocal = null; store.del(K.manual); }
+  render();
+});
+$('tasaManOff').addEventListener('click', async () => {
+  const ok = await confirmDialog({title:'¿Está seguro?', html:'Se quitará la tasa manual publicada y todo el equipo volverá a la tasa BCV.', okText:'Quitar tasa manual'});
+  if(!ok) return;
+  await publicarTasa(a => { const d = Object.assign({}, a); if(d.manual) d.manual = Object.assign({}, d.manual, {activo:false}); return d; }, 'Quita la tasa manual; vuelve la tasa BCV', $('tasaManOff'));
+  render();
+});
+
+/* --- Logos --- */
+const aPNG = file => new Promise((ok, mal) => {
+  const fr = new FileReader(); fr.onerror = () => mal(new Error('No se pudo leer la imagen.'));
+  fr.onload = () => { const im = new Image(); im.onerror = () => mal(new Error('El archivo no es una imagen válida.'));
+    im.onload = () => { const k = Math.min(1, 320 / Math.max(im.naturalWidth, im.naturalHeight)), cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round(im.naturalWidth * k)); cv.height = Math.max(1, Math.round(im.naturalHeight * k));
+      cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height); ok(cv.toDataURL('image/png')); };
+    im.src = fr.result; };
+  fr.readAsDataURL(file);
+});
+$('logoList').addEventListener('change', async e => {
+  const inp = e.target.closest('[data-subir]'); if(!inp || !inp.files[0]) return;
+  const s = inp.dataset.subir;
+  try{
+    const url = await aPNG(inp.files[0]), b64 = url.split('base64,')[1];
+    LOGOS[s] = {url};
+    document.querySelectorAll(`[data-logo="${s}"]`).forEach(x => ponerLogo(x, url));
+    const c = ghConfig();
+    if(c.owner && c.repo && ghToken()){
+      ghSave();
+      const cur = await ghGet(c, `logos/${s}.png`, c.branch);
+      await ghPut(c, `logos/${s}.png`, b64, `Logo ${s}`, cur.sha, c.branch);
+      ghOk('logo ' + s); toast('Logo publicado. El sitio lo mostrará en uno o dos minutos.');
+    } else {
+      const bin = atob(b64), u = new Uint8Array(bin.length); for(let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+      descargar(`${s}.png`, new Blob([u], {type:'image/png'}));
+      toast(`Sin token: se descargó ${s}.png. Súbelo a la carpeta logos/ del repositorio.`);
+    }
+  }catch(err){ toast(err.message || 'No se pudo publicar el logo.', true); }
+  inp.value = '';
+});
+
+/* --- Respaldos --- */
+$('exportJson').addEventListener('click', () => { if(!datos.proveedores.length){ toast('No hay datos para descargar.', true); return; } descargar('cxp.json', new Blob([JSON.stringify(datos)], {type:'application/json'})); });
+$('exportTasa').addEventListener('click', () => {
+  const t = tasa();
+  if(t.modo !== 'manual' && t.modo !== 'bcv'){ toast('Primero actualiza desde el BCV o usa una tasa manual.', true); return; }
+  descargar('tasa.json', new Blob([JSON.stringify(docTasa(pubTasa, t), null, 1)], {type:'application/json'}));
+});
+
+/* =========================================================
+   Registrar factura: los mismos ítems de la hoja PROVEEDORES
+   ========================================================= */
+const AUTO = {ivaAuto:true, retAuto:true, fvAuto:true, tasaAuto:true};
+const numTxt = (n, d) => n == null || n === '' || isNaN(n) ? '' : fmt(+n, d == null ? 2 : d);
+const val = id => { const v = parseNum($(id).value); return isNaN(v) ? null : v; };
+const nombreProv = t => String(t || '').replace(/\s+/g, ' ').trim().toUpperCase();
+function provCanonico(t){ const n = nombreProv(t), s = slug(n); const f = datos.proveedores.find(x => slug(x.p) === s); return f ? f.p : n; }
+/* días de crédito habituales del proveedor, según sus facturas */
+function creditoDe(p){
+  const s = slug(p), c = {};
+  datos.proveedores.forEach(f => { if(slug(f.p) === s && f.est !== 'anulada'){ const d = dias(f.fe, f.fv); if(d >= 0) c[d] = (c[d] || 0) + 1; } });
+  const k = Object.keys(c).sort((a, b) => c[b] - c[a] || b - a)[0];
+  return k == null ? null : +k;
+}
+/* tasa BCV de la fecha de emisión: historial publicado, facturas del mismo día o la tasa BCV vigente */
+function tasaDeFecha(fe){
+  const h = ((pubTasa && pubTasa.historial) || []).find(x => x && x.fecha === fe && x.valor > 0);
+  if(h) return {tasa:+h.valor, nota:'del historial BCV de ese día'};
+  const s = facTasa().serie.find(x => x.fecha === fe);
+  if(s) return {tasa:s.tasa, nota:'la de las facturas de ese día'};
+  const t = tasa();
+  if(t.bcv && fe >= sumar(t.bcv.fecha, -4)) return {tasa:t.bcv.tasa, nota:`BCV del ${fmtDayShort(t.bcv.fecha)}`};
+  const ant = facTasa().serie.filter(x => x.fecha <= fe).pop();
+  if(ant && dias(ant.fecha, fe) <= 5) return {tasa:ant.tasa, nota:`la del ${fmtDayShort(ant.fecha)}; revísala`};
+  return {tasa:null, nota:'escríbela: no hay tasa guardada para esa fecha'};
+}
+function leerForm(){
+  const base = val('rBase') || 0, exento = val('rExento') || 0;
+  const c = CXP.calcular({base, exento, iva: AUTO.ivaAuto ? null : (val('rIva') || 0), ret: AUTO.retAuto ? null : (val('rRet') || 0), tasa: val('rTasa') || 0});
+  return Object.assign(c, {emp: $('rEmp').value || CXP.EMPRESA, p: provCanonico($('rProv').value), doc: $('rDoc').value.replace(/\s+/g, ' ').trim().toUpperCase(), fe: $('rFe').value, fv: $('rFv').value});
+}
+function recalcular(origen){
+  const fe = $('rFe').value;
+  if(origen === 'prov' && !editando){ const d = creditoDe($('rProv').value); if(d != null && AUTO.fvAuto) $('rCred').value = d; }
+  if((origen === 'fe' || origen === 'cred' || origen === 'prov') && AUTO.fvAuto && CXP.esISO(fe)) $('rFv').value = sumar(fe, Math.max(0, parseInt($('rCred').value, 10) || 0));
+  if(origen === 'fv' && CXP.esISO(fe) && CXP.esISO($('rFv').value)) $('rCred').value = Math.max(0, dias(fe, $('rFv').value));
+  if((origen === 'fe' || origen === 'inicio') && AUTO.tasaAuto && CXP.esISO(fe)){ const t = tasaDeFecha(fe); $('rTasa').value = t.tasa ? numTxt(t.tasa, 4) : ''; $('rTasaNota').textContent = t.nota; }
+  const f = leerForm();
+  if(AUTO.ivaAuto) $('rIva').value = f.base ? numTxt(f.iva) : '';
+  if(AUTO.retAuto) $('rRet').value = f.iva ? numTxt(f.ret) : '';
+  $('rIvaAuto').hidden = AUTO.ivaAuto; $('rRetAuto').hidden = AUTO.retAuto;
+  $('rTotal').textContent = bs(f.total); $('rUsd').textContent = usd(f.usd); $('rPorPagar').textContent = bs(f.porPagar);
+  $('rDeuda').textContent = $('rDeuda2').textContent = usd(f.deudaUsd);
+  if(CXP.esISO(f.fv)){ const d = dias(f.fv, hoy); $('rDias').textContent = d; $('rStatus').innerHTML = `<span class="status ${d > 0 ? 'void' : 'ok'}">${d > 0 ? 'VENCIDO' : 'POR VENCER'}</span>`; }
+  else { $('rDias').textContent = '—'; $('rStatus').textContent = '—'; }
+  const m = marca(f.emp);
+  $('rLogo').innerHTML = f.p ? mono(f.p) : logoImg(m, 'oscuro');
+  $('rSub').textContent = (f.p ? f.p + ' · ' : 'Cuenta por pagar de ') + m.nombre;
+  pintarLogos();
+}
+function limpiarForm(conservar){
+  editando = null;
+  Object.assign(AUTO, {ivaAuto:true, retAuto:true, fvAuto:true, tasaAuto:true});
+  ['rProv', 'rDoc', 'rBase', 'rExento', 'rIva', 'rRet', 'rTasa'].forEach(id => { if(!(conservar && id === 'rProv')) $(id).value = ''; $(id).classList.remove('invalid'); });
+  ['rFe', 'rFv'].forEach(id => $(id).classList.remove('invalid'));
+  if(!conservar) $('rFe').value = CXP.hoyISO();
+  if(!$('rCred').value) $('rCred').value = 15;
+  $('rErr').textContent = ''; $('rTitulo').textContent = 'Registrar factura'; $('rGuardar').textContent = 'Guardar factura'; $('rCancelar').hidden = true; $('rLimpiar').hidden = false;
+  recalcular('inicio'); recalcular('fe');
+}
+function cargarEnForm(f){
+  editando = f.uid;
+  Object.assign(AUTO, {ivaAuto: Math.abs(f.iva - f.base * 0.16) < 0.01, retAuto: Math.abs(f.ret - f.iva * 0.75) < 0.01, fvAuto:false, tasaAuto:false});
+  if(![...$('rEmp').options].some(o => o.value === (f.emp || CXP.EMPRESA))) $('rEmp').add(new Option(marca(f.emp).corto, f.emp));
+  $('rEmp').value = f.emp || CXP.EMPRESA; $('rProv').value = f.p; $('rDoc').value = f.doc; $('rFe').value = f.fe; $('rFv').value = f.fv;
+  $('rBase').value = f.base ? numTxt(f.base) : ''; $('rExento').value = f.exento ? numTxt(f.exento) : '';
+  $('rIva').value = numTxt(f.iva); $('rRet').value = numTxt(f.ret); $('rTasa').value = f.tasa ? numTxt(f.tasa, 4) : '';
+  $('rCred').value = Math.max(0, dias(f.fe, f.fv)); $('rTasaNota').textContent = 'la que tiene la factura';
+  $('rErr').textContent = ''; $('rTitulo').textContent = 'Corregir factura'; $('rGuardar').textContent = 'Guardar cambios'; $('rCancelar').hidden = false; $('rLimpiar').hidden = true;
+  recalcular('editar'); setTab('registrar'); $('rProv').focus();
+}
+[['rProv', 'prov'], ['rFe', 'fe'], ['rCred', 'cred'], ['rBase', 'm'], ['rExento', 'm']].forEach(([id, o]) => $(id).addEventListener('input', () => recalcular(o)));
+$('rEmp').addEventListener('change', () => recalcular('emp'));
+$('rFv').addEventListener('input', () => { AUTO.fvAuto = false; recalcular('fv'); });
+$('rIva').addEventListener('input', () => { AUTO.ivaAuto = $('rIva').value.trim() === ''; recalcular('m'); });
+$('rRet').addEventListener('input', () => { AUTO.retAuto = $('rRet').value.trim() === ''; recalcular('m'); });
+$('rTasa').addEventListener('input', () => { AUTO.tasaAuto = $('rTasa').value.trim() === ''; $('rTasaNota').textContent = AUTO.tasaAuto ? '' : 'escrita a mano'; recalcular('m'); });
+$('rIvaAuto').addEventListener('click', () => { AUTO.ivaAuto = true; recalcular('m'); });
+$('rRetAuto').addEventListener('click', () => { AUTO.retAuto = true; recalcular('m'); });
+['rBase', 'rExento', 'rIva', 'rRet'].forEach(id => $(id).addEventListener('blur', () => { const v = val(id); if(v != null) $(id).value = numTxt(v); }));
+$('rTasa').addEventListener('blur', () => { const v = val('rTasa'); if(v != null) $('rTasa').value = numTxt(v, 4); });
+$('rLimpiar').addEventListener('click', () => limpiarForm(false));
+$('rCancelar').addEventListener('click', () => limpiarForm(false));
+
+async function guardarFactura(){
+  const f = leerForm(), err = [], mal = (id, t) => { $(id).classList.add('invalid'); err.push(t); };
+  ['rProv', 'rDoc', 'rFe', 'rFv', 'rBase', 'rExento', 'rTasa', 'rIva', 'rRet'].forEach(id => $(id).classList.remove('invalid'));
+  if(!f.p) mal('rProv', 'Falta el proveedor.');
+  if(!f.doc) mal('rDoc', 'Falta el documento.');
+  if(!CXP.esISO(f.fe)) mal('rFe', 'Falta la fecha de emisión.');
+  if(!CXP.esISO(f.fv)) mal('rFv', 'Falta la fecha de vencimiento.');
+  else if(CXP.esISO(f.fe) && f.fv < f.fe) mal('rFv', 'El vencimiento no puede ser anterior a la emisión.');
+  if(!(f.base + f.exento > 0)){ $('rBase').classList.add('invalid'); mal('rExento', 'Escribe la base imponible o el monto exento.'); }
+  if(f.iva < 0 || f.ret < 0 || f.ret > f.total) mal('rRet', 'Revisa el IVA y la retención.');
+  if(!(f.tasa > 0)) mal('rTasa', 'Falta la tasa BCV de la factura.');
+  if(err.length){ $('rErr').textContent = err[0]; return; }
+  const uid = CXP.claveFactura(f), otra = porUid(uid);
+  if(otra && otra.uid !== editando && otra.est !== 'anulada' && otra.est !== 'retirada'){
+    $('rDoc').classList.add('invalid');
+    $('rErr').textContent = `La factura ${f.doc} de ${f.p} ya está en el registro${otra.est === 'pagada' ? ' como pagada' : ''}${otra.por ? ` (la registró ${otra.por})` : ''}. Búscala en el registro para corregirla.`;
+    return;
+  }
+  const ref = (tasa().bcv || facTasa().ultima || {}).tasa;
+  if(ref && Math.abs(f.tasa / ref - 1) > 0.5){
+    const ok = await confirmDialog({title:'¿Está seguro?', html:`La tasa <b>Bs. ${fmtTasa(f.tasa)}</b> se aleja mucho de la última conocida (Bs. ${fmtTasa(ref)}). La deuda en USD de esta factura quedaría en <b>${usd(f.deudaUsd)}</b>.`, okText:'Guardar así'});
+    if(!ok) return;
+  }
+  const ahora = new Date().toISOString(), previa = editando ? porUid(editando) : null;
+  const reg = Object.assign({}, f, {uid, mod:ahora, por:usuario(), org:'registro'});
+  if(reg.emp === CXP.EMPRESA) delete reg.emp;
+  if(previa && previa.creada) reg.creada = previa.creada; else if(!previa) reg.creada = ahora;
+  if(previa && previa.uid !== uid){ previa.est = 'anulada'; previa.mod = ahora; previa.por = usuario(); pend.add(previa.uid); }   /* cambió proveedor o documento */
+  const i = datos.proveedores.findIndex(x => x.uid === uid);
+  if(i > -1) datos.proveedores[i] = reg; else datos.proveedores.push(reg);
+  pend.add(uid); persistir();
+  const eraEdicion = !!editando;
+  limpiarForm(!eraEdicion); render();
+  toast(eraEdicion ? 'Cambios guardados' : `Factura ${reg.doc} guardada` + (conectado() ? '' : ' solo en este equipo'), false);
+  $(eraEdicion ? 'rProv' : 'rDoc').focus();
+  sync(false);
+}
+$('rGuardar').addEventListener('click', guardarFactura);
+$('regForm').addEventListener('keydown', e => { if(e.key === 'Enter' && e.target.matches('input')){ e.preventDefault(); guardarFactura(); } });
+
+/* ---------- Registro: últimos movimientos, pagadas y anuladas ---------- */
+function cambiarEstado(f, est, extra){
+  const ahora = new Date().toISOString();
+  if(est) f.est = est; else { delete f.est; delete f.pago; }
+  Object.assign(f, extra || {}, {mod:ahora, por:usuario()});
+  pend.add(f.uid); persistir(); render(); sync(false);
+}
+function renderRegistro(){
+  /* listas del formulario */
+  const es = empresas(), cur = $('rEmp').value;
+  const lista = es.length ? es : [CXP.EMPRESA];
+  $('rEmp').innerHTML = lista.map(e => `<option value="${esc(e)}">${esc(marca(e).nombre)}</option>`).join('');
+  $('rEmp').value = lista.includes(cur) ? cur : (emp && lista.includes(emp) ? emp : lista[0]);
+  $('rProvList').innerHTML = [...new Set(datos.proveedores.map(f => f.p))].sort((a, b) => a.localeCompare(b, 'es')).map(p => `<option value="${esc(p)}">`).join('');
+  /* conexión */
+  const con = conectado(), auto = CXP.repoDePagina(), c = ghConfig();
+  $('conectar').hidden = con;
+  $('cRepoRow').hidden = !!(auto || (c.owner && c.repo));
+  if(!$('cUser').value) $('cUser').value = usuario();
+  /* tabla */
+  const q = CXP.norm($('regQ').value), t = vista.t || tasa();
+  let fs = datos.proveedores.filter(f => regVista === 'pag' ? f.est === 'pagada' : regVista === 'anu' ? (f.est === 'anulada' || f.est === 'retirada') : !f.est);
+  if(emp) fs = fs.filter(f => (f.emp || CXP.EMPRESA) === emp);
+  const total = fs.length;
+  if(q) fs = fs.filter(f => CXP.norm(f.doc).indexOf(q) > -1 || CXP.norm(f.p).indexOf(q) > -1 || CXP.norm(f.por || '').indexOf(q) > -1);
+  fs = fs.slice().sort((a, b) => (b.mod || '').localeCompare(a.mod || ''));
+  const corte = q ? 200 : 60, ver = fs.slice(0, corte);
+  const nP = datos.proveedores.filter(f => f.est === 'pagada').length;
+  $('regSummary').textContent = `${activas().length} por pagar · ${nP} pagadas. ${regVista === 'rec' ? 'Primero lo último que se registró o cambió.' : ''}`;
+  const vacio = $('regEmpty');
+  if(!ver.length){ $('regTable').innerHTML = ''; vacio.hidden = false; vacio.innerHTML = `<b>${q ? 'Nada coincide con la búsqueda' : regVista === 'pag' ? 'Aún no hay facturas marcadas como pagadas' : regVista === 'anu' ? 'No hay facturas anuladas' : 'El registro está vacío'}</b>${!q && regVista === 'rec' ? 'Guarda la primera factura con el formulario.' : ''}`; return; }
+  vacio.hidden = true;
+  const estado = f => {
+    if(f.est === 'pagada') return `<span class="status hist">Pagada${f.pago && f.pago.fecha ? ' ' + fFecha(f.pago.fecha) : ''}</span>`;
+    if(f.est === 'anulada') return '<span class="status void">Anulada</span>';
+    if(f.est === 'retirada') return '<span class="status hist">Retirada</span>';
+    const d = dias(f.fv, hoy); return `<span class="status ${d > 0 ? 'void' : 'ok'}">${d > 0 ? 'VENCIDO' : 'POR VENCER'}</span>`;
+  };
+  const acc = f => !f.est
+    ? `<button class="link-btn" data-acc="editar" data-uid="${esc(f.uid)}">Corregir</button><button class="link-btn" data-acc="pagar" data-uid="${esc(f.uid)}">Pagada</button><button class="link-btn danger" data-acc="anular" data-uid="${esc(f.uid)}">Anular</button>`
+    : `<button class="link-btn" data-acc="reactivar" data-uid="${esc(f.uid)}">Volver a por pagar</button>`;
+  $('regTable').innerHTML = `<thead><tr><th>PROVEEDOR</th><th>DOCUMENTO</th><th>F.VCTO.</th><th class="r">DEUDA EN USD</th><th>STATUS</th><th class="r act">Acciones</th></tr></thead>
+    <tbody>${ver.map(f => `<tr><td class="prov">${who(f.p)}</td>
+      <td><span class="code">${esc(f.doc)}</span><small class="quien">${esc(f.por || (f.org === 'excel' ? 'Excel' : 'sin nombre'))}${f.mod && f.mod > '2001' ? ' · ' + fmtDate(f.mod) : ''}</small></td>
+      <td>${fFecha(f.fv)}</td><td class="r"><span class="price">${fmt(f.deudaUsd)}</span></td>
+      <td>${estado(f)}${pend.has(f.uid) ? '<span class="status sync-p" title="Guardada en este equipo; falta subirla">sin subir</span>' : ''}</td>
+      <td class="act">${acc(f)}</td></tr>`).join('')}</tbody>
+    ${total > ver.length ? `<tfoot><tr><td colspan="6" class="muted" style="font-weight:400">Se muestran ${ver.length} de ${fs.length}. Usa el buscador para encontrar las demás.</td></tr></tfoot>` : ''}`;
+}
+$('regQ').addEventListener('input', () => { renderRegistro(); pintarLogos(); });
+$('regVista').addEventListener('click', e => { const b = e.target.closest('button'); if(!b) return; regVista = b.dataset.v; $('regVista').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); renderRegistro(); pintarLogos(); });
+$('regTable').addEventListener('click', async e => {
+  const b = e.target.closest('[data-acc]'); if(!b) return;
+  const f = porUid(b.dataset.uid); if(!f) return;
+  const quien = `<b>${esc(f.doc)}</b> de ${esc(f.p)} (${usd(f.deudaUsd)})`;
+  if(b.dataset.acc === 'editar') return cargarEnForm(f);
+  if(b.dataset.acc === 'pagar'){
+    const ok = await confirmDialog({title:'Marcar como pagada', html:`La factura ${quien} saldrá de las cuentas por pagar y quedará en «Pagadas».<label class="blk" for="pagoFecha">Fecha del pago</label><input type="date" id="pagoFecha" class="field" value="${CXP.hoyISO()}"><label class="blk" for="pagoNota">Referencia o nota (opcional)</label><input id="pagoNota" class="field" maxlength="60" autocomplete="off">`, okText:'Marcar pagada'});
+    if(!ok) return;
+    const fecha = CXP.esISO($('pagoFecha').value) ? $('pagoFecha').value : CXP.hoyISO(), nota = $('pagoNota').value.trim();
+    cambiarEstado(f, 'pagada', {pago: nota ? {fecha, nota} : {fecha}}); toast('Factura marcada como pagada');
+  }
+  if(b.dataset.acc === 'anular'){
+    const ok = await confirmDialog({title:'¿Está seguro?', html:`Se anulará la factura ${quien}. Deja de contar en la deuda; queda en «Anuladas» y se puede recuperar.`, okText:'Anular', danger:true});
+    if(!ok) return;
+    cambiarEstado(f, 'anulada'); toast('Factura anulada');
+  }
+  if(b.dataset.acc === 'reactivar'){
+    const ok = await confirmDialog({title:'¿Está seguro?', html:`La factura ${quien} volverá a las cuentas por pagar.`, okText:'Volver a por pagar'});
+    if(!ok) return;
+    cambiarEstado(f, null); toast('Factura de vuelta en las cuentas por pagar');
+  }
+});
+
+/* ---------- Conectar este equipo (para quienes solo registran) ---------- */
+$('cConectar').addEventListener('click', async () => {
+  const tk = $('cToken').value.trim(), repo = $('cRepo').value.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\/$/, '').split('/');
+  if(!$('cRepoRow').hidden){ if(repo.length !== 2 || !repo[0] || !repo[1]){ $('cMsg').style.color = 'var(--danger)'; $('cMsg').textContent = 'Escribe el repositorio como usuario/repositorio.'; return; } $('ghOwner').value = repo[0]; $('ghRepo').value = repo[1]; }
+  if(!tk){ $('cMsg').style.color = 'var(--danger)'; $('cMsg').textContent = 'Pega el token de acceso.'; return; }
+  $('ghToken').value = tk; $('ghUser').value = $('cUser').value.trim(); $('ghRemember').checked = $('cRemember').checked;
+  const c = ghConfig(), btn = $('cConectar'); btn.disabled = true; $('cMsg').style.color = ''; $('cMsg').textContent = 'Comprobando…';
+  try{
+    const res = await fetch(`${ghRepoApi(c)}/branches/${encodeURIComponent(c.branch)}`, {headers:ghHeaders()});
+    if(!res.ok) throw await ghError(res);
+    ghSave(); $('cToken').value = ''; $('cMsg').textContent = ''; etag = null;
+    pend.forEach(u => { const f = porUid(u); if(f && !f.por) f.por = usuario(); }); persistir();   /* lo guardado antes de conectar queda a su nombre */
+    toast('Equipo conectado'); render(); sync(false);
+  }catch(e){ $('ghToken').value = ''; $('cMsg').style.color = 'var(--danger)'; $('cMsg').textContent = e.message || 'Sin conexión con GitHub.'; }
+  btn.disabled = false;
+});
+
+/* ---------- Inicio ---------- */
+(async function init(){
+  ghFill();
+  setAdminOpen(ses.get(K.adminOpen) === '1');
+  await cargar();
+  if(emp && !empresas().includes(emp)) emp = '';
+  render();
+  limpiarForm(false);
+  const tab = ses.get(K.tab); if(tab && $('p-' + tab)) setTab(tab);
+  if(pend.size || finPend) sync(false);
+  const viejo = !bcvLocal || !bcvLocal.consultado || Date.now() - new Date(bcvLocal.consultado).getTime() > 4 * 36e5;
+  if(viejo && !QS.has('sinbcv')) actualizarBCV(true);
+})();
+
+</script>
+</body>
+</html>

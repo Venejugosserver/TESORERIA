@@ -1,0 +1,39 @@
+name: Tasa BCV
+
+# Lee la tasa oficial del Banco Central de Venezuela y la guarda en tasa.json.
+# El BCV la publica al cierre de la tarde; se consulta varias veces por si se retrasa.
+on:
+  schedule:
+    - cron: "10 13 * * 1-5"   # 9:10 a. m. de Caracas
+    - cron: "10 21 * * 1-5"   # 5:10 p. m.
+    - cron: "10 23 * * 1-5"   # 7:10 p. m.
+    - cron: "10 1 * * 2-6"    # 9:10 p. m. (madrugada UTC del día siguiente)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tasa-bcv
+  cancel-in-progress: false
+
+jobs:
+  tasa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Consultar la tasa
+        run: python3 scripts/tasa_bcv.py
+      - name: Publicar tasa.json si cambió
+        run: |
+          if git diff --quiet -- tasa.json; then
+            echo "Sin cambios en la tasa."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tasa.json
+          git commit -m "Tasa BCV $(date -u +%Y-%m-%d)"
+          git pull --rebase --autostash
+          git push
