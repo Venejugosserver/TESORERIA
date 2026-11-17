@@ -1,8 +1,13 @@
 {
- "valor": null,
- "fecha": null,
- "actualizada": null,
- "fuente": null,
+ "valor": 915.7476,
+ "fecha": "2026-11-17",
+ "actualizada": "2026-11-17T14:13:34.882Z",
+ "fuente": "BCV · DolarApi",
  "manual": null,
- "historial": []
+ "historial": [
+  {
+   "fecha": "2026-11-17",
+   "valor": 915.7476
+  }
+ ]
 }
